@@ -1,0 +1,6 @@
+{
+  "name": "FlockLedger",
+  "description": "Sindhi & English sheep herding expense, livestock trade, shepherd advance/salary, medical ledger, and owner balance tracker with PDF reports and auto-backup.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

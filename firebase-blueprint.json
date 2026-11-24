@@ -1,0 +1,204 @@
+{
+  "entities": {
+    "Farm": {
+      "title": "Farm",
+      "description": "A sheep herding business workspace owned by an admin with caretaker members.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the farm creator/admin."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the sheep farm or business."
+        },
+        "joinCode": {
+          "type": "string",
+          "description": "6-character alphanumeric invite code for caretakers."
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "UIDs of all members (admin and caretakers) allowed to read and add entries."
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "UIDs of admins allowed to edit/delete entries and manage farm settings."
+        },
+        "shepherds": {
+          "type": "array",
+          "description": "List of shepherd (Dharar) names working on the farm."
+        },
+        "initialFlockCount": {
+          "type": "integer",
+          "description": "Starting number of sheep in the flock."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when farm was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when farm was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "name",
+        "joinCode",
+        "memberUids",
+        "adminUids",
+        "shepherds",
+        "initialFlockCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LedgerEntry": {
+      "title": "LedgerEntry",
+      "description": "A financial or livestock transaction entry on a farm (expense, medicine/vet, buy/sell sheep, shepherd advance/salary, or owner funds).",
+      "type": "object",
+      "properties": {
+        "farmId": {
+          "type": "string",
+          "description": "Parent farm document ID."
+        },
+        "createdByUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user who logged the entry."
+        },
+        "createdByName": {
+          "type": "string",
+          "description": "Display name of the user who logged the entry."
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Denormalized member UIDs from parent farm for list query security."
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Denormalized admin UIDs from parent farm for edit/delete authorization."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "EXPENSE",
+            "MEDICINE_VET",
+            "LIVESTOCK_BUY",
+            "LIVESTOCK_SELL",
+            "SHEPHERD_ADVANCE",
+            "SHEPHERD_SALARY",
+            "OWNER_FUNDS"
+          ],
+          "description": "Transaction category."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Monetary amount in PKR."
+        },
+        "livestockCount": {
+          "type": "integer",
+          "description": "Number of sheep bought or sold (for LIVESTOCK_BUY or LIVESTOCK_SELL)."
+        },
+        "shepherdName": {
+          "type": "string",
+          "description": "Name of the shepherd (for SHEPHERD_ADVANCE or SHEPHERD_SALARY)."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short description or title of the transaction."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional detailed note."
+        },
+        "receiptBase64": {
+          "type": "string",
+          "description": "Optional compressed JPEG bill/receipt image encoded as Base64."
+        },
+        "entryDateMillis": {
+          "type": "integer",
+          "description": "Epoch milliseconds of the transaction date."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "farmId",
+        "createdByUid",
+        "createdByName",
+        "memberUids",
+        "adminUids",
+        "category",
+        "amount",
+        "livestockCount",
+        "shepherdName",
+        "title",
+        "note",
+        "entryDateMillis",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FarmInvite": {
+      "title": "FarmInvite",
+      "description": "Invite code lookup mapping a 6-12 char join code to a farmId.",
+      "type": "object",
+      "properties": {
+        "farmId": {
+          "type": "string",
+          "description": "Target farm document ID."
+        },
+        "farmName": {
+          "type": "string",
+          "description": "Target farm display name."
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the farm admin who created the invite."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "farmId",
+        "farmName",
+        "ownerId",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/farms/{farmId}": {
+      "schema": {
+        "$ref": "#/entities/Farm"
+      },
+      "description": "Sheep farm workspaces scoped to memberUids and adminUids."
+    },
+    "/farms/{farmId}/entries/{entryId}": {
+      "schema": {
+        "$ref": "#/entities/LedgerEntry"
+      },
+      "description": "Ledger transactions belonging to a farm."
+    },
+    "/farm_invites/{inviteCode}": {
+      "schema": {
+        "$ref": "#/entities/FarmInvite"
+      },
+      "description": "Direct-get invite code lookup for caretakers joining a farm."
+    }
+  }
+}

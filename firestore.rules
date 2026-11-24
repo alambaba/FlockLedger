@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidFarm(data) {
+      return data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+             data.joinCode is string && data.joinCode.size() >= 6 && data.joinCode.size() <= 16 &&
+             data.joinCode.matches('^[A-Z0-9]+$') &&
+             data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 20 &&
+             (data.memberUids[0] is string) &&
+             data.ownerId in data.memberUids &&
+             data.adminUids is list && data.adminUids.size() >= 1 && data.adminUids.size() <= 10 &&
+             (data.adminUids[0] is string) &&
+             data.ownerId in data.adminUids &&
+             data.shepherds is list && data.shepherds.size() <= 30 &&
+             (data.shepherds.size() == 0 || data.shepherds[0] is string) &&
+             data.initialFlockCount is int && data.initialFlockCount >= 0 && data.initialFlockCount <= 100000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCategory(category) {
+      return category in [
+        'EXPENSE',
+        'MEDICINE_VET',
+        'LIVESTOCK_BUY',
+        'LIVESTOCK_SELL',
+        'SHEPHERD_ADVANCE',
+        'SHEPHERD_SALARY',
+        'OWNER_FUNDS'
+      ];
+    }
+
+    function isValidEntry(data) {
+      return data.farmId is string && data.farmId.size() >= 1 && data.farmId.size() <= 128 &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() <= 80 &&
+             data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 20 &&
+             (data.memberUids[0] is string) &&
+             data.adminUids is list && data.adminUids.size() >= 1 && data.adminUids.size() <= 10 &&
+             (data.adminUids[0] is string) &&
+             data.category is string && isValidCategory(data.category) &&
+             (data.amount is int || data.amount is float) && data.amount > 0 && data.amount <= 100000000 &&
+             data.livestockCount is int && data.livestockCount >= 0 && data.livestockCount <= 100000 &&
+             data.shepherdName is string && data.shepherdName.size() <= 80 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.note is string && data.note.size() <= 500 &&
+             (!('receiptBase64' in data) || (data.receiptBase64 is string && data.receiptBase64.size() <= 350000)) &&
+             data.entryDateMillis is int && data.entryDateMillis > 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidInvite(data) {
+      return data.farmId is string && data.farmId.size() >= 1 && data.farmId.size() <= 128 &&
+             data.farmName is string && data.farmName.size() >= 1 && data.farmName.size() <= 80 &&
+             data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    match /farms/{farmId} {
+      allow get: if isSignedIn() && isValidId(farmId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(farmId) &&
+                       incoming().keys().hasAll([
+                         'ownerId', 'name', 'joinCode', 'memberUids', 'adminUids',
+                         'shepherds', 'initialFlockCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'ownerId', 'name', 'joinCode', 'memberUids', 'adminUids',
+                         'shepherds', 'initialFlockCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidFarm(incoming()) &&
+                       incoming().ownerId == request.auth.uid &&
+                       incoming().memberUids.size() == 1 &&
+                       incoming().adminUids.size() == 1 &&
+                       request.auth.uid in incoming().memberUids &&
+                       request.auth.uid in incoming().adminUids;
+
+      allow update: if isSignedIn() &&
+                       isValidId(farmId) &&
+                       isValidFarm(incoming()) &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         // Action 1: Admin updates farm metadata, shepherds, or member roster
+                         (
+                           request.auth.uid in existing().adminUids &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'name', 'joinCode', 'memberUids', 'adminUids',
+                             'shepherds', 'initialFlockCount', 'updatedAt'
+                           ])
+                         ) ||
+                         // Action 2: Invited caretaker joins by adding only themselves to memberUids
+                         (
+                           !(request.auth.uid in existing().memberUids) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+                           incoming().memberUids.size() == existing().memberUids.size() + 1 &&
+                           incoming().memberUids.hasAll(existing().memberUids) &&
+                           request.auth.uid in incoming().memberUids &&
+                           exists(/databases/$(database)/documents/farm_invites/$(existing().joinCode))
+                         )
+                       );
+
+      allow delete: if isSignedIn() && isValidId(farmId) && existing().ownerId == request.auth.uid;
+
+      match /entries/{entryId} {
+        allow get: if isSignedIn() && isValidId(farmId) && isValidId(entryId) &&
+                      request.auth.uid in existing().memberUids;
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(farmId) &&
+                         isValidId(entryId) &&
+                         incoming().keys().hasAll([
+                           'farmId', 'createdByUid', 'createdByName', 'memberUids', 'adminUids',
+                           'category', 'amount', 'livestockCount', 'shepherdName',
+                           'title', 'note', 'entryDateMillis', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'farmId', 'createdByUid', 'createdByName', 'memberUids', 'adminUids',
+                           'category', 'amount', 'livestockCount', 'shepherdName',
+                           'title', 'note', 'receiptBase64', 'entryDateMillis', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidEntry(incoming()) &&
+                         incoming().farmId == farmId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         exists(/databases/$(database)/documents/farms/$(farmId)) &&
+                         request.auth.uid in get(/databases/$(database)/documents/farms/$(farmId)).data.memberUids &&
+                         incoming().memberUids == get(/databases/$(database)/documents/farms/$(farmId)).data.memberUids &&
+                         incoming().adminUids == get(/databases/$(database)/documents/farms/$(farmId)).data.adminUids;
+
+        allow update: if isSignedIn() &&
+                         isValidId(farmId) &&
+                         isValidId(entryId) &&
+                         isValidEntry(incoming()) &&
+                         request.auth.uid in existing().adminUids &&
+                         incoming().farmId == existing().farmId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdByName == existing().createdByName &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'category', 'amount', 'livestockCount', 'shepherdName',
+                           'title', 'note', 'receiptBase64', 'entryDateMillis',
+                           'memberUids', 'adminUids', 'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() &&
+                         isValidId(farmId) &&
+                         isValidId(entryId) &&
+                         request.auth.uid in existing().adminUids;
+      }
+    }
+
+    match /farm_invites/{inviteCode} {
+      allow get: if isSignedIn() && isValidId(inviteCode);
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidId(inviteCode) &&
+                       inviteCode.matches('^[A-Z0-9]{6,16}$') &&
+                       incoming().keys().hasAll(['farmId', 'farmName', 'ownerId', 'createdAt']) &&
+                       incoming().keys().hasOnly(['farmId', 'farmName', 'ownerId', 'createdAt']) &&
+                       isValidInvite(incoming()) &&
+                       incoming().ownerId == request.auth.uid &&
+                       exists(/databases/$(database)/documents/farms/$(incoming().farmId)) &&
+                       get(/databases/$(database)/documents/farms/$(incoming().farmId)).data.ownerId == request.auth.uid;
+
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(inviteCode) && existing().ownerId == request.auth.uid;
+    }
+  }
+}
