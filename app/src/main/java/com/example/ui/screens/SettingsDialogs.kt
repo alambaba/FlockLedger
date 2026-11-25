@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,15 +15,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AddBusiness
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.FileDownload
-import androidx.compose.material.icons.rounded.GroupAdd
-import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -250,18 +251,17 @@ fun BackupSettingsDialog(
 @Composable
 fun FarmSettingsDialog(
     farm: Farm,
+    allFarms: List<Farm>,
     isAdmin: Boolean,
     strings: AppStrings,
     onDismiss: () -> Unit,
+    onSelectFarm: (String) -> Unit,
+    onCreateFarm: (name: String, initialFlock: Long) -> Unit,
     onSaveFarmSettings: (name: String, initialFlock: Long, shepherds: List<String>) -> Unit,
-    onJoinFarmByCode: (String) -> Unit,
-    onSyncMembers: () -> Unit,
 ) {
-    val clipboard = LocalClipboardManager.current
-    var farmName by remember(farm.name) { mutableStateOf(farm.name) }
-    var initialFlockText by remember(farm.initialFlockCount) { mutableStateOf(farm.initialFlockCount.toString()) }
-    var joinCodeInput by remember { mutableStateOf("") }
-    var codeCopied by remember { mutableStateOf(false) }
+    var farmName by remember(farm.id, farm.name) { mutableStateOf(farm.name) }
+    var initialFlockText by remember(farm.id, farm.initialFlockCount) { mutableStateOf(farm.initialFlockCount.toString()) }
+    var newFarmName by remember { mutableStateOf("") }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -297,46 +297,22 @@ fun FarmSettingsDialog(
                     }
                 }
 
-                // Invite code card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = "${strings.inviteCodeLabel}: ${farm.joinCode}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text(
-                            text = strings.shareInviteHint,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
-                        )
-                        Text(
-                            text = "${strings.membersCountLabel}: ${farm.memberUids.size}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
+                if (allFarms.size > 1) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        allFarms.forEach { item ->
+                            FilterChip(
+                                selected = item.id == farm.id,
                                 onClick = {
-                                    clipboard.setText(AnnotatedString(farm.joinCode))
-                                    codeCopied = true
-                                }
-                            ) {
-                                Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.size(6.dp))
-                                Text(if (codeCopied) "Copied!" else farm.joinCode)
-                            }
-                            if (isAdmin) {
-                                OutlinedButton(onClick = onSyncMembers) {
-                                    Icon(Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.size(6.dp))
-                                    Text(strings.syncMembersAccess)
-                                }
-                            }
+                                    onSelectFarm(item.id)
+                                    onDismiss()
+                                },
+                                label = { Text(item.name) }
+                            )
                         }
                     }
                 }
@@ -368,38 +344,41 @@ fun FarmSettingsDialog(
                                 onDismiss()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("save_farm_settings_button")
                     ) {
                         Text(strings.saveEntry)
                     }
-                }
 
-                HorizontalDivider()
+                    HorizontalDivider()
 
-                // Join another farm by code
-                Text(strings.joinFarmTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = joinCodeInput,
-                        onValueChange = { joinCodeInput = it.uppercase() },
-                        label = { Text(strings.enterJoinCode) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(
-                        onClick = {
-                            if (joinCodeInput.isNotBlank()) {
-                                onJoinFarmByCode(joinCodeInput)
-                                onDismiss()
-                            }
-                        },
-                        modifier = Modifier.height(52.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Rounded.GroupAdd, contentDescription = strings.joinFarmAction)
+                        OutlinedTextField(
+                            value = newFarmName,
+                            onValueChange = { newFarmName = it },
+                            label = { Text(strings.farmNameLabel) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                if (newFarmName.isNotBlank()) {
+                                    onCreateFarm(newFarmName.trim(), 0L)
+                                    newFarmName = ""
+                                    onDismiss()
+                                }
+                            },
+                            modifier = Modifier
+                                .height(52.dp)
+                                .testTag("create_farm_button")
+                        ) {
+                            Icon(Icons.Rounded.AddBusiness, contentDescription = strings.saveEntry)
+                        }
                     }
                 }
             }

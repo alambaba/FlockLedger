@@ -1,11 +1,5 @@
 package com.example.data.model
 
-import androidx.annotation.Keep
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.DocumentId
-import com.google.firebase.firestore.IgnoreExtraProperties
-import com.google.firebase.firestore.ServerTimestamp
-
 enum class EntryCategory {
     EXPENSE,
     MEDICINE_VET,
@@ -21,32 +15,20 @@ enum class EntryCategory {
     }
 }
 
-@Keep
-@IgnoreExtraProperties
 data class Farm(
-    @DocumentId val id: String = "",
-    val ownerId: String = "",
+    val id: String = "",
+    val ownerId: String = "local_admin",
     val name: String = "",
-    val joinCode: String = "",
-    val memberUids: List<String> = emptyList(),
-    val adminUids: List<String> = emptyList(),
     val shepherds: List<String> = emptyList(),
     val initialFlockCount: Long = 0L,
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null,
-) {
-    fun isUserAdmin(uid: String): Boolean = uid.isNotBlank() && (ownerId == uid || uid in adminUids)
-}
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val updatedAtMillis: Long = System.currentTimeMillis(),
+)
 
-@Keep
-@IgnoreExtraProperties
 data class LedgerEntry(
-    @DocumentId val id: String = "",
+    val id: String = "",
     val farmId: String = "",
-    val createdByUid: String = "",
     val createdByName: String = "",
-    val memberUids: List<String> = emptyList(),
-    val adminUids: List<String> = emptyList(),
     val category: String = EntryCategory.EXPENSE.name,
     val amount: Double = 0.0,
     val livestockCount: Long = 0L,
@@ -55,8 +37,8 @@ data class LedgerEntry(
     val note: String = "",
     val receiptBase64: String? = null,
     val entryDateMillis: Long = System.currentTimeMillis(),
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val updatedAtMillis: Long = System.currentTimeMillis(),
 ) {
     fun parsedCategory(): EntryCategory = EntryCategory.fromRaw(category)
 }

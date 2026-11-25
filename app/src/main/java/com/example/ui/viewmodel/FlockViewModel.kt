@@ -18,7 +18,6 @@ import com.example.data.preferences.AppPreferencesRepository
 import com.example.data.preferences.UserPreferences
 import com.example.data.repository.FlockRepository
 import com.example.i18n.AppLanguage
-import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -54,7 +53,6 @@ data class DashboardData(
     val activeFarm: Farm?,
     val entries: List<LedgerEntry>,
     val summary: FarmSummary,
-    val isUserAdminOnActiveFarm: Boolean,
 )
 
 class FlockViewModel(
@@ -62,8 +60,6 @@ class FlockViewModel(
     private val prefsRepository: AppPreferencesRepository,
     private val backupManager: BackupManager,
     private val pdfGenerator: PdfReportGenerator,
-    private val currentUserId: String,
-    private val currentUserDisplayName: String?,
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = prefsRepository.preferencesFlow
@@ -79,16 +75,12 @@ class FlockViewModel(
     private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 8)
     val events: SharedFlow<AppEvent> = _events.asSharedFlow()
 
-    private val farmsState: StateFlow<UiState<List<Farm>>> = repository.observeUserFarms(currentUserId)
+    private val farmsState: StateFlow<UiState<List<Farm>>> = repository.observeFarms()
         .map<List<Farm>, UiState<List<Farm>>> { UiState.Success(it) }
         .catch { error ->
-            val firestoreError = generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val root = firestoreError ?: error
-            Log.w(TAG, "Error observing farms", root)
-            emit(UiState.Error(root.message ?: "Failed to load farms"))
+            if (error is CancellationException) throw error
+            Log.w(TAG, "Error observing farms", error)
+            emit(UiState.Error(error.message ?: "Failed to load farms"))
         }
         .stateIn(
             scope = viewModelScope,
@@ -115,36 +107,25 @@ class FlockViewModel(
                                         activeFarm = null,
                                         entries = emptyList(),
                                         summary = computeFarmSummary(null, emptyList()),
-                                        isUserAdminOnActiveFarm = true,
                                     )
                                 )
                             )
                         } else {
-                            repository.observeFarmEntries(activeFarm.id, currentUserId)
+                            repository.observeFarmEntries(activeFarm.id)
                                 .map<List<LedgerEntry>, UiState<DashboardData>> { entries ->
-                                    if (activeFarm.isUserAdmin(currentUserId)) {
-                                        viewModelScope.launch {
-                                            repository.syncMemberUidsToEntries(activeFarm, entries)
-                                        }
-                                    }
                                     UiState.Success(
                                         DashboardData(
                                             farms = farms,
                                             activeFarm = activeFarm,
                                             entries = entries,
                                             summary = computeFarmSummary(activeFarm, entries),
-                                            isUserAdminOnActiveFarm = activeFarm.isUserAdmin(currentUserId),
                                         )
                                     )
                                 }
                                 .catch { error ->
-                                    val firestoreError = generateSequence(error) { it.cause }
-                                        .filterIsInstance<FirebaseFirestoreException>()
-                                        .firstOrNull()
-                                    if (firestoreError == null && error is CancellationException) throw error
-                                    val root = firestoreError ?: error
-                                    Log.w(TAG, "Error observing entries", root)
-                                    emit(UiState.Error(root.message ?: "Failed to load ledger entries"))
+                                    if (error is CancellationException) throw error
+                                    Log.w(TAG, "Error observing entries", error)
+                                    emit(UiState.Error(error.message ?: "Failed to load ledger entries"))
                                 }
                         }
                     }
@@ -158,14 +139,14 @@ class FlockViewModel(
 
     init {
         viewModelScope.launch {
-            repository.ensureDefaultFarm(currentUserId, currentUserDisplayName)
+            repository.ensureDefaultFarm()
         }
     }
 
     fun retryInitialization() {
         viewModelScope.launch {
             _isBusy.value = true
-            repository.ensureDefaultFarm(currentUserId, currentUserDisplayName)
+            repository.ensureDefaultFarm()
             _isBusy.value = false
         }
     }
@@ -179,10 +160,6 @@ class FlockViewModel(
             }
             prefsRepository.setLanguage(next)
         }
-    }
-
-    fun setLanguage(language: AppLanguage) {
-        viewModelScope.launch { prefsRepository.setLanguage(language) }
     }
 
     fun toggleDarkMode() {
@@ -203,8 +180,22 @@ class FlockViewModel(
         }
     }
 
+    fun createFarm(name: String, initialFlockCount: Long) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = repository.createFarm(name, initialFlockCount)
+            _isBusy.value = false
+            res.onSuccess { farmId ->
+                prefsRepository.setSelectedFarmId(farmId)
+                _events.tryEmit(AppEvent.ShowMessage("Farm created"))
+            }.onFailure { err ->
+                _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Could not create farm"))
+            }
+        }
+    }
+
     fun saveEntry(
-        editingEntryId: String?,
+        editingEntry: LedgerEntry?,
         category: EntryCategory,
         title: String,
         amount: Double,
@@ -218,12 +209,14 @@ class FlockViewModel(
     ) {
         val currentData = (dashboardState.value as? UiState.Success)?.data ?: return
         val farm = currentData.activeFarm ?: return
+        val loggerRole = if (preferences.value.preferCaretakerView) "Caretaker" else "Admin"
 
         viewModelScope.launch {
             _isBusy.value = true
-            val result = if (editingEntryId == null) {
+            val result = if (editingEntry == null) {
                 repository.addEntry(
                     farm = farm,
+                    createdByName = loggerRole,
                     category = category,
                     title = title,
                     amount = amount,
@@ -236,7 +229,7 @@ class FlockViewModel(
             } else {
                 repository.updateEntry(
                     farm = farm,
-                    entryId = editingEntryId,
+                    existingEntry = editingEntry,
                     category = category,
                     title = title,
                     amount = amount,
@@ -251,7 +244,7 @@ class FlockViewModel(
 
             result.onSuccess {
                 _events.tryEmit(AppEvent.ShowMessage(savedMessage))
-                if (editingEntryId == null) {
+                if (editingEntry == null) {
                     val count = prefsRepository.incrementEntryCounter()
                     if (count >= 5) {
                         _events.tryEmit(AppEvent.ShowMessage(autoBackupMessage))
@@ -265,10 +258,9 @@ class FlockViewModel(
     }
 
     fun deleteEntry(entryId: String) {
-        val farm = (dashboardState.value as? UiState.Success)?.data?.activeFarm ?: return
         viewModelScope.launch {
             _isBusy.value = true
-            val res = repository.deleteEntry(farm, entryId)
+            val res = repository.deleteEntry(entryId)
             _isBusy.value = false
             res.onFailure { err ->
                 _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Delete failed"))
@@ -299,28 +291,6 @@ class FlockViewModel(
             res.onFailure { err ->
                 _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Update failed"))
             }
-        }
-    }
-
-    fun joinFarmByCode(code: String) {
-        viewModelScope.launch {
-            _isBusy.value = true
-            val res = repository.joinFarmByCode(code)
-            _isBusy.value = false
-            res.onSuccess { farmId ->
-                prefsRepository.setSelectedFarmId(farmId)
-                _events.tryEmit(AppEvent.ShowMessage("Joined farm!"))
-            }.onFailure { err ->
-                _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Could not join farm"))
-            }
-        }
-    }
-
-    fun syncMemberAccess() {
-        val data = (dashboardState.value as? UiState.Success)?.data ?: return
-        val farm = data.activeFarm ?: return
-        viewModelScope.launch {
-            repository.syncMemberUidsToEntries(farm, data.entries)
         }
     }
 
