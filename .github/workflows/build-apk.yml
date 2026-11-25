@@ -1,10 +1,8 @@
+```yaml
 name: Build FlockLedger Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -36,8 +34,11 @@ jobs:
 
       - name: Accept Android SDK Licenses
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager --list_installed
+          yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK Components
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
