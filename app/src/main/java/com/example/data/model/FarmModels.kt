@@ -7,11 +7,39 @@ enum class EntryCategory {
     LIVESTOCK_SELL,
     SHEPHERD_ADVANCE,
     SHEPHERD_SALARY,
-    OWNER_FUNDS;
+    OWNER_FUNDS,
+    LOAN_TAKEN,
+    LOAN_GIVEN,
+    LOAN_REPAY,
+    LOAN_RECOVER;
 
     companion object {
         fun fromRaw(raw: String?): EntryCategory =
             entries.firstOrNull { it.name == raw } ?: EXPENSE
+    }
+}
+
+enum class ExpenseSubCategory {
+    TREATMENT,
+    FEED,
+    FARM_MAINTENANCE,
+    MACHINERY,
+    OTHER;
+
+    companion object {
+        fun fromRaw(raw: String?): ExpenseSubCategory? =
+            entries.firstOrNull { it.name == raw }
+    }
+}
+
+enum class ApprovalStatus {
+    APPROVED,
+    PENDING,
+    REJECTED;
+
+    companion object {
+        fun fromRaw(raw: String?): ApprovalStatus =
+            entries.firstOrNull { it.name == raw } ?: APPROVED
     }
 }
 
@@ -30,6 +58,7 @@ data class LedgerEntry(
     val farmId: String = "",
     val createdByName: String = "",
     val category: String = EntryCategory.EXPENSE.name,
+    val subCategory: String = "",
     val amount: Double = 0.0,
     val livestockCount: Long = 0L,
     val shepherdName: String = "",
@@ -39,8 +68,11 @@ data class LedgerEntry(
     val entryDateMillis: Long = System.currentTimeMillis(),
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = System.currentTimeMillis(),
+    val approvalStatus: String = ApprovalStatus.APPROVED.name,
 ) {
     fun parsedCategory(): EntryCategory = EntryCategory.fromRaw(category)
+    fun parsedSubCategory(): ExpenseSubCategory? = ExpenseSubCategory.fromRaw(subCategory)
+    fun parsedApprovalStatus(): ApprovalStatus = ApprovalStatus.fromRaw(approvalStatus)
 }
 
 data class ShepherdLedgerSummary(
@@ -52,23 +84,46 @@ data class ShepherdLedgerSummary(
     val totalPaid: Double get() = totalAdvance + totalSalary
 }
 
+data class LoanPartySummary(
+    val partyName: String,
+    val taken: Double,
+    val repaid: Double,
+    val given: Double,
+    val recovered: Double,
+) {
+    val payableRemaining: Double get() = (taken - repaid).coerceAtLeast(0.0)
+    val receivableRemaining: Double get() = (given - recovered).coerceAtLeast(0.0)
+}
+
 data class FarmSummary(
     val ownerFundsReceived: Double,
     val generalExpenses: Double,
+    val farmExpenseSubTotals: Map<ExpenseSubCategory, Double>,
     val medicineVetExpenses: Double,
     val livestockBuyCost: Double,
     val livestockSalesRevenue: Double,
     val shepherdAdvancesTotal: Double,
     val shepherdSalariesTotal: Double,
+    val loansTakenTotal: Double,
+    val loansRepaidTotal: Double,
+    val loansGivenTotal: Double,
+    val loansRecoveredTotal: Double,
+    val loansPayableBalance: Double,
+    val loansReceivableBalance: Double,
     val livestockBoughtCount: Int,
     val livestockSoldCount: Int,
     val currentFlockCount: Int,
     val totalOutflows: Double,
     val remainingCashBalance: Double,
+    val pendingApprovalCount: Int,
     val shepherdBreakdown: List<ShepherdLedgerSummary>,
+    val loanPartyBreakdown: List<LoanPartySummary>,
 )
 
 fun computeFarmSummary(farm: Farm?, entries: List<LedgerEntry>): FarmSummary {
+    val pendingCount = entries.count { it.parsedApprovalStatus() == ApprovalStatus.PENDING }
+    val approvedEntries = entries.filter { it.parsedApprovalStatus() == ApprovalStatus.APPROVED }
+
     var ownerFunds = 0.0
     var generalExpenses = 0.0
     var medicineVet = 0.0
@@ -76,15 +131,25 @@ fun computeFarmSummary(farm: Farm?, entries: List<LedgerEntry>): FarmSummary {
     var livestockSellRev = 0.0
     var advances = 0.0
     var salaries = 0.0
+    var loansTaken = 0.0
+    var loansRepaid = 0.0
+    var loansGiven = 0.0
+    var loansRecovered = 0.0
     var boughtCount = 0
     var soldCount = 0
 
+    val subTotals = linkedMapOf<ExpenseSubCategory, Double>()
     val shepherdMap = linkedMapOf<String, MutableList<LedgerEntry>>()
+    val loanMap = linkedMapOf<String, MutableList<LedgerEntry>>()
 
-    for (entry in entries) {
+    for (entry in approvedEntries) {
         when (entry.parsedCategory()) {
             EntryCategory.OWNER_FUNDS -> ownerFunds += entry.amount
-            EntryCategory.EXPENSE -> generalExpenses += entry.amount
+            EntryCategory.EXPENSE -> {
+                generalExpenses += entry.amount
+                val sub = entry.parsedSubCategory() ?: ExpenseSubCategory.OTHER
+                subTotals[sub] = (subTotals[sub] ?: 0.0) + entry.amount
+            }
             EntryCategory.MEDICINE_VET -> medicineVet += entry.amount
             EntryCategory.LIVESTOCK_BUY -> {
                 livestockBuyCost += entry.amount
@@ -104,10 +169,29 @@ fun computeFarmSummary(farm: Farm?, entries: List<LedgerEntry>): FarmSummary {
                 val name = entry.shepherdName.trim().ifEmpty { "Unknown" }
                 shepherdMap.getOrPut(name) { mutableListOf() }.add(entry)
             }
+            EntryCategory.LOAN_TAKEN -> {
+                loansTaken += entry.amount
+                val party = entry.shepherdName.trim().ifEmpty { entry.title.trim().ifEmpty { "Unknown" } }
+                loanMap.getOrPut(party) { mutableListOf() }.add(entry)
+            }
+            EntryCategory.LOAN_REPAY -> {
+                loansRepaid += entry.amount
+                val party = entry.shepherdName.trim().ifEmpty { entry.title.trim().ifEmpty { "Unknown" } }
+                loanMap.getOrPut(party) { mutableListOf() }.add(entry)
+            }
+            EntryCategory.LOAN_GIVEN -> {
+                loansGiven += entry.amount
+                val party = entry.shepherdName.trim().ifEmpty { entry.title.trim().ifEmpty { "Unknown" } }
+                loanMap.getOrPut(party) { mutableListOf() }.add(entry)
+            }
+            EntryCategory.LOAN_RECOVER -> {
+                loansRecovered += entry.amount
+                val party = entry.shepherdName.trim().ifEmpty { entry.title.trim().ifEmpty { "Unknown" } }
+                loanMap.getOrPut(party) { mutableListOf() }.add(entry)
+            }
         }
     }
 
-    // Include registered shepherds with 0 payments so admin sees full roster
     farm?.shepherds?.forEach { name ->
         val clean = name.trim()
         if (clean.isNotEmpty()) {
@@ -126,24 +210,44 @@ fun computeFarmSummary(farm: Farm?, entries: List<LedgerEntry>): FarmSummary {
         )
     }.sortedByDescending { it.totalPaid }
 
-    val totalOutflows = generalExpenses + medicineVet + livestockBuyCost + advances + salaries
-    val remainingCash = ownerFunds + livestockSellRev - totalOutflows
+    val loanBreakdown = loanMap.map { (party, list) ->
+        LoanPartySummary(
+            partyName = party,
+            taken = list.filter { it.parsedCategory() == EntryCategory.LOAN_TAKEN }.sumOf { it.amount },
+            repaid = list.filter { it.parsedCategory() == EntryCategory.LOAN_REPAY }.sumOf { it.amount },
+            given = list.filter { it.parsedCategory() == EntryCategory.LOAN_GIVEN }.sumOf { it.amount },
+            recovered = list.filter { it.parsedCategory() == EntryCategory.LOAN_RECOVER }.sumOf { it.amount },
+        )
+    }.sortedByDescending { it.payableRemaining + it.receivableRemaining }
+
+    val totalOutflows = generalExpenses + medicineVet + livestockBuyCost + advances + salaries + loansGiven + loansRepaid
+    val totalInflows = ownerFunds + livestockSellRev + loansTaken + loansRecovered
+    val remainingCash = totalInflows - totalOutflows
     val startFlock = (farm?.initialFlockCount ?: 0L).toInt()
     val currentFlock = (startFlock + boughtCount - soldCount).coerceAtLeast(0)
 
     return FarmSummary(
         ownerFundsReceived = ownerFunds,
         generalExpenses = generalExpenses,
+        farmExpenseSubTotals = subTotals,
         medicineVetExpenses = medicineVet,
         livestockBuyCost = livestockBuyCost,
         livestockSalesRevenue = livestockSellRev,
         shepherdAdvancesTotal = advances,
         shepherdSalariesTotal = salaries,
+        loansTakenTotal = loansTaken,
+        loansRepaidTotal = loansRepaid,
+        loansGivenTotal = loansGiven,
+        loansRecoveredTotal = loansRecovered,
+        loansPayableBalance = (loansTaken - loansRepaid).coerceAtLeast(0.0),
+        loansReceivableBalance = (loansGiven - loansRecovered).coerceAtLeast(0.0),
         livestockBoughtCount = boughtCount,
         livestockSoldCount = soldCount,
         currentFlockCount = currentFlock,
         totalOutflows = totalOutflows,
         remainingCashBalance = remainingCash,
+        pendingApprovalCount = pendingCount,
         shepherdBreakdown = shepherdBreakdown,
+        loanPartyBreakdown = loanBreakdown,
     )
 }

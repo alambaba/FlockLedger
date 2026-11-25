@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Button
@@ -63,7 +64,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.data.model.EntryCategory
+import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.LedgerEntry
+import com.example.data.preferences.UserRole
 import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.englishStrings
@@ -94,19 +97,55 @@ fun FlockLedgerRoot() {
     )
 
     val prefs by vm.preferences.collectAsStateWithLifecycle()
+    val activeRole by vm.activeRole.collectAsStateWithLifecycle()
     val isSindhi = prefs.language == AppLanguage.SINDHI
+    val strings = remember(isSindhi) { if (isSindhi) sindhiStrings() else englishStrings() }
 
     FlockLedgerTheme(
         darkTheme = prefs.darkMode,
         isSindhiRtl = isSindhi
     ) {
-        MainWorkspace(viewModel = vm)
+        when {
+            !prefs.pinsConfigured -> {
+                PinSetupScreen(
+                    strings = strings,
+                    darkMode = prefs.darkMode,
+                    onToggleLanguage = { vm.toggleLanguage() },
+                    onToggleDarkMode = { vm.toggleDarkMode() },
+                    onSavePins = { adminPin, caretakerPin ->
+                        vm.setupPins(adminPin, caretakerPin, initialRole = UserRole.ADMIN)
+                    }
+                )
+            }
+            activeRole == null -> {
+                PinUnlockScreen(
+                    strings = strings,
+                    darkMode = prefs.darkMode,
+                    onToggleLanguage = { vm.toggleLanguage() },
+                    onToggleDarkMode = { vm.toggleDarkMode() },
+                    onVerifyPin = { pin -> vm.unlockWithPin(pin) }
+                )
+            }
+            else -> {
+                MainWorkspace(
+                    viewModel = vm,
+                    activeRole = activeRole!!,
+                    strings = strings,
+                    isSindhi = isSindhi,
+                )
+            }
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainWorkspace(viewModel: FlockViewModel) {
+private fun MainWorkspace(
+    viewModel: FlockViewModel,
+    activeRole: UserRole,
+    strings: AppStrings,
+    isSindhi: Boolean,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -119,17 +158,32 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
     val dashboardState by viewModel.dashboardState.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
 
-    val isSindhi = prefs.language == AppLanguage.SINDHI
-    val strings: AppStrings = remember(isSindhi) { if (isSindhi) sindhiStrings() else englishStrings() }
-    val navItems = remember(strings) { buildFlockNavItems(strings) }
+    val isAdminView = activeRole == UserRole.ADMIN
+    val bottomNavItems = remember(strings) { buildBottomNavItems(strings) }
+    val allNavItems = remember(strings) { buildAllNavItems(strings) }
+
+    val allowedCategories = remember(isAdminView) {
+        if (isAdminView) {
+            EntryCategory.entries
+        } else {
+            listOf(
+                EntryCategory.EXPENSE,
+                EntryCategory.MEDICINE_VET,
+                EntryCategory.LIVESTOCK_BUY,
+                EntryCategory.LIVESTOCK_SELL,
+            )
+        }
+    }
 
     var showEditorDialog by remember { mutableStateOf(false) }
     var editorInitialCategory by remember { mutableStateOf(EntryCategory.EXPENSE) }
+    var editorInitialSubCategory by remember { mutableStateOf<ExpenseSubCategory?>(null) }
     var editingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
-    var prefilledShepherd by remember { mutableStateOf("") }
+    var prefilledShepherdOrParty by remember { mutableStateOf("") }
     var viewingReceiptEntry by remember { mutableStateOf<LedgerEntry?>(null) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var showFarmDialog by remember { mutableStateOf(false) }
+    var showChangePinsDialog by remember { mutableStateOf(false) }
 
     val navigateToRoute: (String) -> Unit = { route ->
         if (currentRoute != route) {
@@ -182,26 +236,30 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
     }
 
     val successData = (dashboardState as? UiState.Success)?.data
-    val showAdminView = !prefs.preferCaretakerView
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             FlockDrawerSheetContent(
                 farmName = successData?.activeFarm?.name.orEmpty(),
-                navItems = navItems,
+                navItems = allNavItems,
                 currentRoute = currentRoute,
+                pendingApprovalCount = successData?.summary?.pendingApprovalCount ?: 0,
                 prefs = prefs,
-                isAdminView = showAdminView,
+                isAdminView = isAdminView,
                 isSindhi = isSindhi,
                 strings = strings,
                 onNavigate = { route ->
                     navigateToRoute(route)
                     scope.launch { drawerState.close() }
                 },
-                onToggleRoleMode = {
-                    viewModel.setPreferCaretakerView(!prefs.preferCaretakerView)
+                onSwitchUserLock = {
                     scope.launch { drawerState.close() }
+                    viewModel.lockWorkspace()
+                },
+                onOpenChangePins = {
+                    scope.launch { drawerState.close() }
+                    showChangePinsDialog = true
                 },
                 onToggleLanguage = {
                     viewModel.toggleLanguage()
@@ -255,13 +313,19 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = if (showAdminView) strings.adminMode else strings.caretakerMode,
+                                    text = if (isAdminView) strings.adminMode else strings.caretakerMode,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         },
                         actions = {
+                            IconButton(
+                                onClick = { viewModel.lockWorkspace() },
+                                modifier = Modifier.testTag("topbar_lock_switch")
+                            ) {
+                                Icon(Icons.Rounded.Lock, contentDescription = strings.switchUserLock)
+                            }
                             IconButton(
                                 onClick = { viewModel.toggleLanguage() },
                                 modifier = Modifier.testTag("topbar_language_toggle")
@@ -283,24 +347,28 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                 bottomBar = {
                     if (!useSideRail && successData?.activeFarm != null) {
                         FlockBottomNavBar(
-                            items = navItems,
+                            items = bottomNavItems,
                             currentRoute = currentRoute,
                             onNavigate = navigateToRoute,
                         )
                     }
                 },
                 floatingActionButton = {
-                    if (successData?.activeFarm != null) {
+                    val allowFab = successData?.activeFarm != null &&
+                        (isAdminView || (currentRoute != ROUTE_SALARIES && currentRoute != ROUTE_LOANS))
+                    if (allowFab) {
                         ExtendedFloatingActionButton(
                             onClick = {
                                 editingEntry = null
                                 editorInitialCategory = when (currentRoute) {
                                     ROUTE_TRADE -> EntryCategory.LIVESTOCK_BUY
-                                    ROUTE_SALARIES -> EntryCategory.SHEPHERD_ADVANCE
+                                    ROUTE_SALARIES -> if (isAdminView) EntryCategory.SHEPHERD_ADVANCE else EntryCategory.EXPENSE
                                     ROUTE_MEDICAL -> EntryCategory.MEDICINE_VET
+                                    ROUTE_LOANS -> if (isAdminView) EntryCategory.LOAN_TAKEN else EntryCategory.EXPENSE
                                     else -> EntryCategory.EXPENSE
                                 }
-                                prefilledShepherd = ""
+                                editorInitialSubCategory = null
+                                prefilledShepherdOrParty = ""
                                 showEditorDialog = true
                             },
                             icon = { Icon(Icons.Rounded.Add, contentDescription = strings.addEntryTitle) },
@@ -319,7 +387,7 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                 ) {
                     if (useSideRail && successData?.activeFarm != null) {
                         FlockSideNavRail(
-                            items = navItems,
+                            items = allNavItems,
                             currentRoute = currentRoute,
                             onNavigate = navigateToRoute,
                         )
@@ -377,17 +445,38 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                                         }
                                     }
                                 } else {
-                                    val openEditorForCategory: (EntryCategory) -> Unit = { cat ->
+                                    val openEditorForCategory: (EntryCategory, String) -> Unit = { cat, party ->
                                         editingEntry = null
                                         editorInitialCategory = cat
-                                        prefilledShepherd = ""
+                                        editorInitialSubCategory = null
+                                        prefilledShepherdOrParty = party
+                                        showEditorDialog = true
+                                    }
+                                    val openEditorForFarmSubCategory: (ExpenseSubCategory) -> Unit = { sub ->
+                                        editingEntry = null
+                                        editorInitialCategory = EntryCategory.EXPENSE
+                                        editorInitialSubCategory = sub
+                                        prefilledShepherdOrParty = ""
                                         showEditorDialog = true
                                     }
                                     val openEditorForEntry: (LedgerEntry) -> Unit = { entry ->
-                                        editingEntry = entry
-                                        editorInitialCategory = entry.parsedCategory()
-                                        prefilledShepherd = entry.shepherdName
-                                        showEditorDialog = true
+                                        if (isAdminView) {
+                                            editingEntry = entry
+                                            editorInitialCategory = entry.parsedCategory()
+                                            editorInitialSubCategory = entry.parsedSubCategory()
+                                            prefilledShepherdOrParty = entry.shepherdName
+                                            showEditorDialog = true
+                                        }
+                                    }
+                                    val approveEntry: (String) -> Unit = { id ->
+                                        viewModel.approveEntry(
+                                            entryId = id,
+                                            approvedMsg = strings.entryApprovedMsg,
+                                            autoBackupMessage = strings.autoBackupTriggeredMsg,
+                                        )
+                                    }
+                                    val rejectEntry: (String) -> Unit = { id ->
+                                        viewModel.rejectEntry(id, strings.entryRejectedMsg)
                                     }
 
                                     NavHost(
@@ -401,21 +490,27 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                                                 entries = state.data.entries,
                                                 summary = state.data.summary,
                                                 entriesSinceBackup = prefs.entriesSinceBackup,
-                                                isAdminView = showAdminView,
+                                                isAdminView = isAdminView,
                                                 strings = strings,
-                                                onQuickAddCategory = openEditorForCategory,
+                                                onQuickAddCategory = { cat -> openEditorForCategory(cat, "") },
+                                                onQuickAddFarmSubCategory = openEditorForFarmSubCategory,
                                                 onEditEntry = openEditorForEntry,
+                                                onApproveEntry = approveEntry,
+                                                onRejectEntry = rejectEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it },
                                                 onDownloadPdf = { viewModel.generatePdfReport() },
-                                                onOpenBackupSettings = { showBackupDialog = true }
+                                                onOpenBackupSettings = { showBackupDialog = true },
+                                                onOpenLoansPage = { navigateToRoute(ROUTE_LOANS) }
                                             )
                                         }
                                         composable(ROUTE_LEDGER) {
                                             LedgerScreen(
                                                 entries = state.data.entries,
-                                                canEdit = showAdminView,
+                                                isAdminView = isAdminView,
                                                 strings = strings,
                                                 onEditEntry = openEditorForEntry,
+                                                onApproveEntry = approveEntry,
+                                                onRejectEntry = rejectEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it }
                                             )
                                         }
@@ -424,10 +519,12 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                                                 farm = farm,
                                                 entries = state.data.entries,
                                                 summary = state.data.summary,
-                                                canEdit = showAdminView,
+                                                isAdminView = isAdminView,
                                                 strings = strings,
-                                                onAddTrade = openEditorForCategory,
+                                                onAddTrade = { cat -> openEditorForCategory(cat, "") },
                                                 onEditEntry = openEditorForEntry,
+                                                onApproveEntry = approveEntry,
+                                                onRejectEntry = rejectEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it }
                                             )
                                         }
@@ -435,14 +532,11 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                                             SalariesScreen(
                                                 entries = state.data.entries,
                                                 summary = state.data.summary,
-                                                canEdit = showAdminView,
+                                                isAdminView = isAdminView,
                                                 strings = strings,
                                                 onAddShepherd = { viewModel.addShepherd(it) },
                                                 onPayShepherd = { shepherdName ->
-                                                    editingEntry = null
-                                                    editorInitialCategory = EntryCategory.SHEPHERD_ADVANCE
-                                                    prefilledShepherd = shepherdName
-                                                    showEditorDialog = true
+                                                    openEditorForCategory(EntryCategory.SHEPHERD_ADVANCE, shepherdName)
                                                 },
                                                 onEditEntry = openEditorForEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it }
@@ -452,9 +546,22 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                                             MedicalScreen(
                                                 entries = state.data.entries,
                                                 summary = state.data.summary,
-                                                canEdit = showAdminView,
+                                                isAdminView = isAdminView,
                                                 strings = strings,
-                                                onAddMedical = { openEditorForCategory(EntryCategory.MEDICINE_VET) },
+                                                onAddMedical = { openEditorForCategory(EntryCategory.MEDICINE_VET, "") },
+                                                onEditEntry = openEditorForEntry,
+                                                onApproveEntry = approveEntry,
+                                                onRejectEntry = rejectEntry,
+                                                onViewReceipt = { viewingReceiptEntry = it }
+                                            )
+                                        }
+                                        composable(ROUTE_LOANS) {
+                                            LoansScreen(
+                                                entries = state.data.entries,
+                                                summary = state.data.summary,
+                                                isAdminView = isAdminView,
+                                                strings = strings,
+                                                onAddLoan = openEditorForCategory,
                                                 onEditEntry = openEditorForEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it }
                                             )
@@ -473,14 +580,17 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
         EntryEditorDialog(
             strings = strings,
             initialCategory = editorInitialCategory,
+            initialSubCategory = editorInitialSubCategory,
+            allowedCategories = allowedCategories,
             editingEntry = editingEntry,
             shepherds = successData.activeFarm.shepherds,
-            prefilledShepherd = prefilledShepherd,
+            prefilledShepherd = prefilledShepherdOrParty,
             onDismiss = { showEditorDialog = false },
-            onSave = { cat, title, amount, sheepCount, shepherd, note, receiptB64, dateMillis ->
+            onSave = { cat, subCat, title, amount, sheepCount, shepherd, note, receiptB64, dateMillis ->
                 viewModel.saveEntry(
                     editingEntry = editingEntry,
                     category = cat,
+                    subCategory = subCat,
                     title = title,
                     amount = amount,
                     livestockCount = sheepCount,
@@ -489,11 +599,12 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
                     receiptBase64 = receiptB64,
                     entryDateMillis = dateMillis,
                     savedMessage = strings.entrySavedMessage,
+                    pendingMessage = strings.entryPendingMsg,
                     autoBackupMessage = strings.autoBackupTriggeredMsg,
                 )
                 showEditorDialog = false
             },
-            onDelete = if (editingEntry != null && showAdminView) {
+            onDelete = if (editingEntry != null && isAdminView) {
                 {
                     viewModel.deleteEntry(editingEntry!!.id)
                     showEditorDialog = false
@@ -512,7 +623,7 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
         )
     }
 
-    if (showBackupDialog) {
+    if (showBackupDialog && isAdminView) {
         BackupSettingsDialog(
             prefs = prefs,
             strings = strings,
@@ -525,17 +636,27 @@ private fun MainWorkspace(viewModel: FlockViewModel) {
         )
     }
 
-    if (showFarmDialog && successData?.activeFarm != null) {
+    if (showFarmDialog && successData?.activeFarm != null && isAdminView) {
         FarmSettingsDialog(
             farm = successData.activeFarm,
             allFarms = successData.farms,
-            isAdmin = showAdminView,
+            isAdmin = true,
             strings = strings,
             onDismiss = { showFarmDialog = false },
             onSelectFarm = { viewModel.selectFarm(it) },
             onCreateFarm = { name, initFlock -> viewModel.createFarm(name, initFlock) },
             onSaveFarmSettings = { name, initFlock, shepherds ->
                 viewModel.updateFarmSettings(name, initFlock, shepherds)
+            }
+        )
+    }
+
+    if (showChangePinsDialog && isAdminView) {
+        ChangePinsDialog(
+            strings = strings,
+            onDismiss = { showChangePinsDialog = false },
+            onSavePins = { adminPin, caretakerPin ->
+                viewModel.setupPins(adminPin, caretakerPin, initialRole = UserRole.ADMIN)
             }
         )
     }

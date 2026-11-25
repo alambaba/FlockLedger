@@ -6,6 +6,7 @@ import com.example.data.local.FarmEntity
 import com.example.data.local.FlockDatabase
 import com.example.data.local.LedgerEntryDao
 import com.example.data.local.LedgerEntryEntity
+import com.example.data.model.ApprovalStatus
 import com.example.data.model.EntryCategory
 import com.example.data.model.Farm
 import com.example.data.model.LedgerEntry
@@ -76,6 +77,7 @@ class FlockRepository(
         farm: Farm,
         createdByName: String,
         category: EntryCategory,
+        subCategory: String,
         title: String,
         amount: Double,
         livestockCount: Long,
@@ -83,6 +85,7 @@ class FlockRepository(
         note: String,
         receiptBase64: String?,
         entryDateMillis: Long,
+        approvalStatus: ApprovalStatus,
     ): Result<Unit> = try {
         val cleanTitle = title.trim().take(120)
         require(cleanTitle.isNotEmpty()) { "Title cannot be empty" }
@@ -92,6 +95,7 @@ class FlockRepository(
         val now = System.currentTimeMillis()
         val entryId = "e_${UUID.randomUUID().toString().replace("-", "").take(16)}"
         val cleanShepherd = shepherdName.trim().take(80)
+        val cleanSub = if (category == EntryCategory.EXPENSE) subCategory.trim() else ""
 
         entryDao.upsertEntry(
             LedgerEntryEntity(
@@ -108,10 +112,13 @@ class FlockRepository(
                 entryDateMillis = entryDateMillis,
                 createdAtMillis = now,
                 updatedAtMillis = now,
+                approvalStatus = approvalStatus.name,
+                subCategory = cleanSub,
             )
         )
 
-        if (cleanShepherd.isNotEmpty() && cleanShepherd !in farm.shepherds && farm.shepherds.size < 30) {
+        val isShepherdCategory = category == EntryCategory.SHEPHERD_ADVANCE || category == EntryCategory.SHEPHERD_SALARY
+        if (isShepherdCategory && cleanShepherd.isNotEmpty() && cleanShepherd !in farm.shepherds && farm.shepherds.size < 30) {
             farmDao.updateFarmSettings(
                 farmId = farm.id,
                 name = farm.name,
@@ -132,6 +139,7 @@ class FlockRepository(
         farm: Farm,
         existingEntry: LedgerEntry,
         category: EntryCategory,
+        subCategory: String,
         title: String,
         amount: Double,
         livestockCount: Long,
@@ -139,6 +147,7 @@ class FlockRepository(
         note: String,
         receiptBase64: String?,
         entryDateMillis: Long,
+        approvalStatus: ApprovalStatus = existingEntry.parsedApprovalStatus(),
     ): Result<Unit> = try {
         val cleanTitle = title.trim().take(120)
         require(cleanTitle.isNotEmpty()) { "Title cannot be empty" }
@@ -146,6 +155,7 @@ class FlockRepository(
 
         val now = System.currentTimeMillis()
         val cleanShepherd = shepherdName.trim().take(80)
+        val cleanSub = if (category == EntryCategory.EXPENSE) subCategory.trim() else ""
         entryDao.upsertEntry(
             LedgerEntryEntity(
                 id = existingEntry.id,
@@ -161,8 +171,19 @@ class FlockRepository(
                 entryDateMillis = entryDateMillis,
                 createdAtMillis = existingEntry.createdAtMillis,
                 updatedAtMillis = now,
+                approvalStatus = approvalStatus.name,
+                subCategory = cleanSub,
             )
         )
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun setApprovalStatus(entryId: String, status: ApprovalStatus): Result<Unit> = try {
+        entryDao.updateApprovalStatus(entryId, status.name, System.currentTimeMillis())
         Result.success(Unit)
     } catch (e: CancellationException) {
         throw e

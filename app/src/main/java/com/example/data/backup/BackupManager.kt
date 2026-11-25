@@ -93,13 +93,14 @@ class BackupManager(private val context: Context) {
         val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
 
         val sb = StringBuilder()
-        sb.appendLine("ID,Date,Category,Title,Amount_PKR,Sheep_Count,Shepherd,Note,Logged_By,Has_Receipt")
+        sb.appendLine("ID,Date,Category,Sub_Category,Title,Amount_PKR,Sheep_Count,Shepherd,Note,Logged_By,Has_Receipt")
         entries.forEach { e ->
             sb.appendLine(
                 listOf(
                     e.id,
                     dateFmt.format(Date(e.entryDateMillis)),
                     e.category,
+                    csvEscape(e.subCategory),
                     csvEscape(e.title),
                     e.amount.toString(),
                     e.livestockCount.toString(),
@@ -230,6 +231,7 @@ class BackupManager(private val context: Context) {
                     put("id", entry.id)
                     put("date", dateFmt.format(Date(entry.entryDateMillis)))
                     put("category", entry.category)
+                    put("subCategory", entry.subCategory)
                     put("title", entry.title)
                     put("amount", entry.amount)
                     put("livestockCount", entry.livestockCount)

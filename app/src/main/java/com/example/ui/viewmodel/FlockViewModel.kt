@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.backup.BackupExecutionResult
 import com.example.data.backup.BackupManager
+import com.example.data.model.ApprovalStatus
 import com.example.data.model.EntryCategory
 import com.example.data.model.Farm
 import com.example.data.model.FarmSummary
@@ -16,6 +17,7 @@ import com.example.data.pdf.GeneratedPdfResult
 import com.example.data.pdf.PdfReportGenerator
 import com.example.data.preferences.AppPreferencesRepository
 import com.example.data.preferences.UserPreferences
+import com.example.data.preferences.UserRole
 import com.example.data.repository.FlockRepository
 import com.example.i18n.AppLanguage
 import kotlinx.coroutines.CancellationException
@@ -68,6 +70,9 @@ class FlockViewModel(
             started = SharingStarted.WhileSubscribed(5000L),
             initialValue = UserPreferences()
         )
+
+    private val _activeRole = MutableStateFlow<UserRole?>(null)
+    val activeRole: StateFlow<UserRole?> = _activeRole.asStateFlow()
 
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
@@ -151,6 +156,27 @@ class FlockViewModel(
         }
     }
 
+    fun setupPins(adminPin: String, caretakerPin: String, initialRole: UserRole = UserRole.ADMIN) {
+        viewModelScope.launch {
+            prefsRepository.savePins(adminPin, caretakerPin)
+            prefsRepository.setPreferCaretakerView(initialRole == UserRole.CARETAKER)
+            _activeRole.value = initialRole
+        }
+    }
+
+    fun unlockWithPin(pin: String): UserRole? {
+        val role = AppPreferencesRepository.resolveRoleForPin(pin, preferences.value) ?: return null
+        _activeRole.value = role
+        viewModelScope.launch {
+            prefsRepository.setPreferCaretakerView(role == UserRole.CARETAKER)
+        }
+        return role
+    }
+
+    fun lockWorkspace() {
+        _activeRole.value = null
+    }
+
     fun toggleLanguage() {
         viewModelScope.launch {
             val next = if (preferences.value.language == AppLanguage.SINDHI) {
@@ -168,12 +194,6 @@ class FlockViewModel(
         }
     }
 
-    fun setPreferCaretakerView(preferCaretaker: Boolean) {
-        viewModelScope.launch {
-            prefsRepository.setPreferCaretakerView(preferCaretaker)
-        }
-    }
-
     fun selectFarm(farmId: String) {
         viewModelScope.launch {
             prefsRepository.setSelectedFarmId(farmId)
@@ -181,6 +201,7 @@ class FlockViewModel(
     }
 
     fun createFarm(name: String, initialFlockCount: Long) {
+        if (_activeRole.value != UserRole.ADMIN) return
         viewModelScope.launch {
             _isBusy.value = true
             val res = repository.createFarm(name, initialFlockCount)
@@ -197,6 +218,7 @@ class FlockViewModel(
     fun saveEntry(
         editingEntry: LedgerEntry?,
         category: EntryCategory,
+        subCategory: String,
         title: String,
         amount: Double,
         livestockCount: Long,
@@ -205,11 +227,27 @@ class FlockViewModel(
         receiptBase64: String?,
         entryDateMillis: Long,
         savedMessage: String,
+        pendingMessage: String,
         autoBackupMessage: String,
     ) {
         val currentData = (dashboardState.value as? UiState.Success)?.data ?: return
         val farm = currentData.activeFarm ?: return
-        val loggerRole = if (preferences.value.preferCaretakerView) "Caretaker" else "Admin"
+        val role = _activeRole.value ?: return
+        val isAdmin = role == UserRole.ADMIN
+
+        // Caretaker can only submit EXPENSE, MEDICINE_VET, LIVESTOCK_BUY, LIVESTOCK_SELL
+        val allowedForCaretaker = setOf(
+            EntryCategory.EXPENSE,
+            EntryCategory.MEDICINE_VET,
+            EntryCategory.LIVESTOCK_BUY,
+            EntryCategory.LIVESTOCK_SELL,
+        )
+        if (!isAdmin && (editingEntry != null || category !in allowedForCaretaker)) {
+            return
+        }
+
+        val loggerRole = if (isAdmin) "Admin" else "Caretaker"
+        val status = if (isAdmin) ApprovalStatus.APPROVED else ApprovalStatus.PENDING
 
         viewModelScope.launch {
             _isBusy.value = true
@@ -218,6 +256,7 @@ class FlockViewModel(
                     farm = farm,
                     createdByName = loggerRole,
                     category = category,
+                    subCategory = subCategory,
                     title = title,
                     amount = amount,
                     livestockCount = livestockCount,
@@ -225,12 +264,14 @@ class FlockViewModel(
                     note = note,
                     receiptBase64 = receiptBase64,
                     entryDateMillis = entryDateMillis,
+                    approvalStatus = status,
                 )
             } else {
                 repository.updateEntry(
                     farm = farm,
                     existingEntry = editingEntry,
                     category = category,
+                    subCategory = subCategory,
                     title = title,
                     amount = amount,
                     livestockCount = livestockCount,
@@ -243,8 +284,8 @@ class FlockViewModel(
             _isBusy.value = false
 
             result.onSuccess {
-                _events.tryEmit(AppEvent.ShowMessage(savedMessage))
-                if (editingEntry == null) {
+                _events.tryEmit(AppEvent.ShowMessage(if (status == ApprovalStatus.PENDING) pendingMessage else savedMessage))
+                if (editingEntry == null && status == ApprovalStatus.APPROVED) {
                     val count = prefsRepository.incrementEntryCounter()
                     if (count >= 5) {
                         _events.tryEmit(AppEvent.ShowMessage(autoBackupMessage))
@@ -257,7 +298,41 @@ class FlockViewModel(
         }
     }
 
+    fun approveEntry(entryId: String, approvedMsg: String, autoBackupMessage: String) {
+        if (_activeRole.value != UserRole.ADMIN) return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = repository.setApprovalStatus(entryId, ApprovalStatus.APPROVED)
+            _isBusy.value = false
+            res.onSuccess {
+                _events.tryEmit(AppEvent.ShowMessage(approvedMsg))
+                val count = prefsRepository.incrementEntryCounter()
+                if (count >= 5) {
+                    _events.tryEmit(AppEvent.ShowMessage(autoBackupMessage))
+                    triggerBackupInternal(resetCounter = true)
+                }
+            }.onFailure { err ->
+                _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Approval failed"))
+            }
+        }
+    }
+
+    fun rejectEntry(entryId: String, rejectedMsg: String) {
+        if (_activeRole.value != UserRole.ADMIN) return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = repository.setApprovalStatus(entryId, ApprovalStatus.REJECTED)
+            _isBusy.value = false
+            res.onSuccess {
+                _events.tryEmit(AppEvent.ShowMessage(rejectedMsg))
+            }.onFailure { err ->
+                _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Reject failed"))
+            }
+        }
+    }
+
     fun deleteEntry(entryId: String) {
+        if (_activeRole.value != UserRole.ADMIN) return
         viewModelScope.launch {
             _isBusy.value = true
             val res = repository.deleteEntry(entryId)
@@ -269,6 +344,7 @@ class FlockViewModel(
     }
 
     fun addShepherd(name: String) {
+        if (_activeRole.value != UserRole.ADMIN) return
         val farm = (dashboardState.value as? UiState.Success)?.data?.activeFarm ?: return
         val clean = name.trim()
         if (clean.isEmpty() || clean in farm.shepherds) return
@@ -283,6 +359,7 @@ class FlockViewModel(
     }
 
     fun updateFarmSettings(newName: String, initialFlockCount: Long, shepherds: List<String>) {
+        if (_activeRole.value != UserRole.ADMIN) return
         val farm = (dashboardState.value as? UiState.Success)?.data?.activeFarm ?: return
         viewModelScope.launch {
             _isBusy.value = true
@@ -300,6 +377,7 @@ class FlockViewModel(
         siaBucket: String,
         siaToken: String,
     ) {
+        if (_activeRole.value != UserRole.ADMIN) return
         viewModelScope.launch {
             prefsRepository.saveBackupEndpoints(googleSheetUrl, siaEndpointUrl, siaBucket, siaToken)
             _events.tryEmit(AppEvent.ShowMessage("Backup configuration saved"))
@@ -318,7 +396,7 @@ class FlockViewModel(
         _isBusy.value = true
         val result = backupManager.performBackup(
             farm = farm,
-            entries = data.entries,
+            entries = data.entries.filter { it.parsedApprovalStatus() == ApprovalStatus.APPROVED },
             summary = data.summary,
             prefs = preferences.value,
         )
@@ -357,7 +435,10 @@ class FlockViewModel(
         val farm = data.activeFarm ?: return
         viewModelScope.launch {
             _isBusy.value = true
-            val uri = backupManager.exportCsvUri(farm, data.entries)
+            val uri = backupManager.exportCsvUri(
+                farm,
+                data.entries.filter { it.parsedApprovalStatus() == ApprovalStatus.APPROVED }
+            )
             _isBusy.value = false
             _events.tryEmit(AppEvent.CsvReady(uri))
         }

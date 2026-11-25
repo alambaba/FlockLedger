@@ -12,6 +12,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,12 +27,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.PhotoLibrary
-import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
@@ -70,11 +72,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.EntryCategory
+import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.LedgerEntry
 import com.example.i18n.AppStrings
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.LivestockBuyTeal
 import com.example.ui.theme.LivestockSellGreen
+import com.example.ui.theme.LoanGivenTeal
+import com.example.ui.theme.LoanTakenAmber
 import com.example.ui.theme.MedicineBlue
 import com.example.ui.theme.OwnerFundsGold
 import com.example.ui.theme.ShepherdAdvancePurple
@@ -93,6 +98,18 @@ fun categoryLabel(category: EntryCategory, strings: AppStrings): String = when (
     EntryCategory.SHEPHERD_ADVANCE -> strings.catShepherdAdvance
     EntryCategory.SHEPHERD_SALARY -> strings.catShepherdSalary
     EntryCategory.OWNER_FUNDS -> strings.catOwnerFunds
+    EntryCategory.LOAN_TAKEN -> strings.catLoanTaken
+    EntryCategory.LOAN_GIVEN -> strings.catLoanGiven
+    EntryCategory.LOAN_REPAY -> strings.catLoanRepay
+    EntryCategory.LOAN_RECOVER -> strings.catLoanRecover
+}
+
+fun subCategoryLabel(subCategory: ExpenseSubCategory, strings: AppStrings): String = when (subCategory) {
+    ExpenseSubCategory.TREATMENT -> strings.subTreatment
+    ExpenseSubCategory.FEED -> strings.subFeed
+    ExpenseSubCategory.FARM_MAINTENANCE -> strings.subMaintenance
+    ExpenseSubCategory.MACHINERY -> strings.subMachinery
+    ExpenseSubCategory.OTHER -> strings.subOther
 }
 
 fun categoryColor(category: EntryCategory): Color = when (category) {
@@ -103,19 +120,32 @@ fun categoryColor(category: EntryCategory): Color = when (category) {
     EntryCategory.SHEPHERD_ADVANCE -> ShepherdAdvancePurple
     EntryCategory.SHEPHERD_SALARY -> ShepherdSalaryIndigo
     EntryCategory.OWNER_FUNDS -> OwnerFundsGold
+    EntryCategory.LOAN_TAKEN -> LoanTakenAmber
+    EntryCategory.LOAN_GIVEN -> LoanGivenTeal
+    EntryCategory.LOAN_REPAY -> ShepherdSalaryIndigo
+    EntryCategory.LOAN_RECOVER -> LivestockSellGreen
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+fun EntryCategory.isLoanCategory(): Boolean =
+    this == EntryCategory.LOAN_TAKEN ||
+        this == EntryCategory.LOAN_GIVEN ||
+        this == EntryCategory.LOAN_REPAY ||
+        this == EntryCategory.LOAN_RECOVER
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EntryEditorDialog(
     strings: AppStrings,
     initialCategory: EntryCategory,
+    initialSubCategory: ExpenseSubCategory? = null,
+    allowedCategories: List<EntryCategory>,
     editingEntry: LedgerEntry?,
     shepherds: List<String>,
     prefilledShepherd: String = "",
     onDismiss: () -> Unit,
     onSave: (
         category: EntryCategory,
+        subCategory: String,
         title: String,
         amount: Double,
         livestockCount: Long,
@@ -129,12 +159,16 @@ fun EntryEditorDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var category by remember(editingEntry, initialCategory) {
-        mutableStateOf(editingEntry?.parsedCategory() ?: initialCategory)
+    val safeInitial = if (initialCategory in allowedCategories) initialCategory else allowedCategories.first()
+    var category by remember(editingEntry, safeInitial) {
+        mutableStateOf(editingEntry?.parsedCategory() ?: safeInitial)
+    }
+    var selectedSubCategory by remember(editingEntry, initialSubCategory) {
+        mutableStateOf(editingEntry?.parsedSubCategory() ?: initialSubCategory ?: ExpenseSubCategory.FEED)
     }
     var title by remember(editingEntry) {
         mutableStateOf(
-            editingEntry?.title ?: defaultTitleForCategory(initialCategory, strings)
+            editingEntry?.title ?: defaultTitleForCategory(safeInitial, strings)
         )
     }
     var amountText by remember(editingEntry) {
@@ -147,7 +181,7 @@ fun EntryEditorDialog(
             editingEntry?.livestockCount?.takeIf { it > 0 }?.toString() ?: ""
         )
     }
-    var shepherdName by remember(editingEntry, prefilledShepherd) {
+    var shepherdOrPartyName by remember(editingEntry, prefilledShepherd) {
         mutableStateOf(editingEntry?.shepherdName ?: prefilledShepherd)
     }
     var note by remember(editingEntry) { mutableStateOf(editingEntry?.note ?: "") }
@@ -227,7 +261,7 @@ fun EntryEditorDialog(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        EntryCategory.entries.forEach { cat ->
+                        allowedCategories.forEach { cat ->
                             FilterChip(
                                 selected = category == cat,
                                 onClick = {
@@ -238,6 +272,26 @@ fun EntryEditorDialog(
                                 },
                                 label = { Text(categoryLabel(cat, strings)) }
                             )
+                        }
+                    }
+                }
+
+                // Farm Expense Sub-Category Chips
+                if (category == EntryCategory.EXPENSE) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(strings.fieldSubCategory, style = MaterialTheme.typography.labelLarge)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            ExpenseSubCategory.entries.forEach { sub ->
+                                FilterChip(
+                                    selected = selectedSubCategory == sub,
+                                    onClick = { selectedSubCategory = sub },
+                                    label = { Text(subCategoryLabel(sub, strings)) },
+                                    modifier = Modifier.testTag("subcat_${sub.name.lowercase()}")
+                                )
+                            }
                         }
                     }
                 }
@@ -328,16 +382,16 @@ fun EntryEditorDialog(
                             ) {
                                 shepherds.forEach { sh ->
                                     FilterChip(
-                                        selected = shepherdName == sh,
-                                        onClick = { shepherdName = sh; validationError = null },
+                                        selected = shepherdOrPartyName == sh,
+                                        onClick = { shepherdOrPartyName = sh; validationError = null },
                                         label = { Text(sh) }
                                     )
                                 }
                             }
                         }
                         OutlinedTextField(
-                            value = shepherdName,
-                            onValueChange = { shepherdName = it; validationError = null },
+                            value = shepherdOrPartyName,
+                            onValueChange = { shepherdOrPartyName = it; validationError = null },
                             label = { Text(strings.fieldShepherdName) },
                             singleLine = true,
                             modifier = Modifier
@@ -345,6 +399,16 @@ fun EntryEditorDialog(
                                 .testTag("entry_shepherd_input")
                         )
                     }
+                } else if (category.isLoanCategory()) {
+                    OutlinedTextField(
+                        value = shepherdOrPartyName,
+                        onValueChange = { shepherdOrPartyName = it; validationError = null },
+                        label = { Text(strings.fieldPartyName) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("entry_party_input")
+                    )
                 }
 
                 // Date Selector
@@ -471,14 +535,17 @@ fun EntryEditorDialog(
                                 amt == null || amt <= 0.0 -> validationError = strings.errorInvalidAmount
                                 (category == EntryCategory.LIVESTOCK_BUY || category == EntryCategory.LIVESTOCK_SELL) && count <= 0L ->
                                     validationError = strings.errorMissingSheepCount
-                                (category == EntryCategory.SHEPHERD_ADVANCE || category == EntryCategory.SHEPHERD_SALARY) && shepherdName.isBlank() ->
+                                (category == EntryCategory.SHEPHERD_ADVANCE || category == EntryCategory.SHEPHERD_SALARY) && shepherdOrPartyName.isBlank() ->
                                     validationError = strings.errorMissingShepherd
+                                category.isLoanCategory() && shepherdOrPartyName.isBlank() ->
+                                    validationError = strings.errorMissingParty
                                 else -> onSave(
                                     category,
+                                    if (category == EntryCategory.EXPENSE) selectedSubCategory.name else "",
                                     title.trim(),
                                     amt,
                                     count,
-                                    shepherdName.trim(),
+                                    shepherdOrPartyName.trim(),
                                     note.trim(),
                                     receiptBase64,
                                     entryDateMillis,
@@ -521,6 +588,10 @@ private fun defaultTitleForCategory(category: EntryCategory, strings: AppStrings
     EntryCategory.SHEPHERD_ADVANCE -> strings.catShepherdAdvance
     EntryCategory.SHEPHERD_SALARY -> strings.catShepherdSalary
     EntryCategory.OWNER_FUNDS -> strings.catOwnerFunds
+    EntryCategory.LOAN_TAKEN -> strings.catLoanTaken
+    EntryCategory.LOAN_GIVEN -> strings.catLoanGiven
+    EntryCategory.LOAN_REPAY -> strings.catLoanRepay
+    EntryCategory.LOAN_RECOVER -> strings.catLoanRecover
 }
 
 @Composable
@@ -550,7 +621,7 @@ fun ReceiptViewerDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Rounded.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                     IconButton(onClick = onDismiss) {

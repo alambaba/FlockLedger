@@ -138,7 +138,7 @@ class PdfReportGenerator(private val context: Context) {
             y += 22f
             drawKeyValueRow("Owner Funds Received (مالڪ کان مليل)", "PKR ${numFmt.format(summary.ownerFundsReceived)}")
             drawKeyValueRow("Livestock Sales Revenue (مال وڪرو)", "PKR ${numFmt.format(summary.livestockSalesRevenue)}")
-            drawKeyValueRow("General Expenses (عام خرچ)", "PKR ${numFmt.format(summary.generalExpenses)}")
+            drawKeyValueRow("Farm Expenses (فارم جا خرچ)", "PKR ${numFmt.format(summary.generalExpenses)}")
             drawKeyValueRow("Medicine & Vet (دوائون ۽ علاج)", "PKR ${numFmt.format(summary.medicineVetExpenses)}")
             drawKeyValueRow("Livestock Purchases (مال خريد)", "PKR ${numFmt.format(summary.livestockBuyCost)}")
             drawKeyValueRow("Shepherd Advances (ڌراڙ ايڊوانس)", "PKR ${numFmt.format(summary.shepherdAdvancesTotal)}")
@@ -172,20 +172,28 @@ class PdfReportGenerator(private val context: Context) {
 
             y += 16f
             ensureSpace(50f)
-            canvas.drawText("Transactions Ledger (${entries.size} entries)", margin, y, sectionPaint)
+            val approvedEntries = entries.filter { it.parsedApprovalStatus() == com.example.data.model.ApprovalStatus.APPROVED }
+            canvas.drawText("Transactions Ledger (${approvedEntries.size} approved)", margin, y, sectionPaint)
             y += 18f
             canvas.drawLine(margin, y - 10f, pageWidth - margin, y - 10f, linePaint)
 
-            entries.forEach { entry ->
+            approvedEntries.forEach { entry ->
                 ensureSpace(34f)
                 val catLabel = when (entry.parsedCategory()) {
-                    EntryCategory.EXPENSE -> "Expense"
+                    EntryCategory.EXPENSE -> {
+                        val sub = entry.parsedSubCategory()?.name?.lowercase()?.replace('_', ' ')
+                        if (sub != null) "Farm Expense ($sub)" else "Farm Expense"
+                    }
                     EntryCategory.MEDICINE_VET -> "Medicine/Vet"
                     EntryCategory.LIVESTOCK_BUY -> "Buy Sheep (${entry.livestockCount})"
                     EntryCategory.LIVESTOCK_SELL -> "Sell Sheep (${entry.livestockCount})"
                     EntryCategory.SHEPHERD_ADVANCE -> "Advance (${entry.shepherdName})"
                     EntryCategory.SHEPHERD_SALARY -> "Salary (${entry.shepherdName})"
                     EntryCategory.OWNER_FUNDS -> "Owner Funds"
+                    EntryCategory.LOAN_TAKEN -> "Loan Taken (${entry.shepherdName})"
+                    EntryCategory.LOAN_GIVEN -> "Loan Given (${entry.shepherdName})"
+                    EntryCategory.LOAN_REPAY -> "Loan Repay (${entry.shepherdName})"
+                    EntryCategory.LOAN_RECOVER -> "Loan Recover (${entry.shepherdName})"
                 }
                 val dateStr = shortDateFmt.format(Date(entry.entryDateMillis))
                 canvas.drawText("$dateStr  [$catLabel]  ${entry.title.take(36)}", margin, y, labelPaint)

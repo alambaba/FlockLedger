@@ -13,15 +13,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ListAlt
+import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
-import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MedicalServices
+import androidx.compose.material.icons.rounded.Password
 import androidx.compose.material.icons.rounded.Payments
-import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Translate
@@ -43,8 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.preferences.UserPreferences
 import com.example.i18n.AppStrings
 
@@ -53,6 +54,7 @@ const val ROUTE_LEDGER = "ledger"
 const val ROUTE_TRADE = "trade"
 const val ROUTE_SALARIES = "salaries"
 const val ROUTE_MEDICAL = "medical"
+const val ROUTE_LOANS = "loans"
 
 data class FlockNavItem(
     val route: String,
@@ -60,13 +62,16 @@ data class FlockNavItem(
     val icon: ImageVector,
 )
 
-fun buildFlockNavItems(strings: AppStrings): List<FlockNavItem> = listOf(
+fun buildBottomNavItems(strings: AppStrings): List<FlockNavItem> = listOf(
     FlockNavItem(ROUTE_FUNDFLOW, strings.navFundflow, Icons.Rounded.AccountBalanceWallet),
     FlockNavItem(ROUTE_LEDGER, strings.navLedger, Icons.AutoMirrored.Rounded.ListAlt),
     FlockNavItem(ROUTE_TRADE, strings.navTrade, Icons.Rounded.SwapHoriz),
     FlockNavItem(ROUTE_SALARIES, strings.navSalaries, Icons.Rounded.Payments),
     FlockNavItem(ROUTE_MEDICAL, strings.navMedical, Icons.Rounded.MedicalServices),
 )
+
+fun buildAllNavItems(strings: AppStrings): List<FlockNavItem> =
+    buildBottomNavItems(strings) + FlockNavItem(ROUTE_LOANS, strings.navLoans, Icons.Rounded.AccountBalance)
 
 @Composable
 fun FlockBottomNavBar(
@@ -92,8 +97,9 @@ fun FlockBottomNavBar(
                 label = {
                     Text(
                         text = item.label,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 modifier = Modifier.testTag("nav_${item.route}")
@@ -126,8 +132,9 @@ fun FlockSideNavRail(
                 label = {
                     Text(
                         text = item.label,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 modifier = Modifier.testTag("rail_${item.route}")
@@ -141,12 +148,14 @@ fun FlockDrawerSheetContent(
     farmName: String,
     navItems: List<FlockNavItem>,
     currentRoute: String,
+    pendingApprovalCount: Int,
     prefs: UserPreferences,
     isAdminView: Boolean,
     isSindhi: Boolean,
     strings: AppStrings,
     onNavigate: (String) -> Unit,
-    onToggleRoleMode: () -> Unit,
+    onSwitchUserLock: () -> Unit,
+    onOpenChangePins: () -> Unit,
     onToggleLanguage: () -> Unit,
     onToggleDarkMode: () -> Unit,
     onDownloadPdf: () -> Unit,
@@ -201,11 +210,14 @@ fun FlockDrawerSheetContent(
 
             Spacer(Modifier.height(6.dp))
 
-            // Primary Navigation Destinations inside Drawer
+            // Primary Navigation Destinations inside Drawer (includes Loans page)
             navItems.forEach { item ->
                 NavigationDrawerItem(
                     icon = { Icon(item.icon, contentDescription = item.label) },
                     label = { Text(item.label) },
+                    badge = if (isAdminView && pendingApprovalCount > 0 && item.route == ROUTE_FUNDFLOW) {
+                        { Badge { Text(pendingApprovalCount.toString()) } }
+                    } else null,
                     selected = currentRoute == item.route,
                     onClick = { onNavigate(item.route) },
                     modifier = Modifier.testTag("drawer_nav_${item.route}")
@@ -214,21 +226,24 @@ fun FlockDrawerSheetContent(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            // Admin / Caretaker Mode Toggle
+            // Switch User / Lock Screen (re-enter Admin or Caretaker PIN)
             NavigationDrawerItem(
-                icon = {
-                    Icon(
-                        imageVector = if (isAdminView) Icons.Rounded.AdminPanelSettings else Icons.Rounded.Person,
-                        contentDescription = strings.roleModeLabel
-                    )
-                },
-                label = {
-                    Text(if (isAdminView) strings.caretakerMode else strings.adminMode)
-                },
+                icon = { Icon(Icons.Rounded.Lock, contentDescription = strings.switchUserLock) },
+                label = { Text(strings.switchUserLock) },
                 selected = false,
-                onClick = onToggleRoleMode,
-                modifier = Modifier.testTag("drawer_role_toggle")
+                onClick = onSwitchUserLock,
+                modifier = Modifier.testTag("drawer_lock_switch")
             )
+
+            if (isAdminView) {
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Rounded.Password, contentDescription = strings.changePinsMenu) },
+                    label = { Text(strings.changePinsMenu) },
+                    selected = false,
+                    onClick = onOpenChangePins,
+                    modifier = Modifier.testTag("drawer_change_pins")
+                )
+            }
 
             // Language Toggle (Sindhi RTL / English LTR)
             NavigationDrawerItem(
@@ -259,39 +274,38 @@ fun FlockDrawerSheetContent(
                 modifier = Modifier.testTag("drawer_theme_toggle")
             )
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            if (isAdminView) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            // PDF Summary Report Download
-            NavigationDrawerItem(
-                icon = { Icon(Icons.Rounded.PictureAsPdf, contentDescription = strings.downloadPdfReport) },
-                label = { Text(strings.downloadPdfReport) },
-                selected = false,
-                onClick = onDownloadPdf,
-                modifier = Modifier.testTag("drawer_pdf_button")
-            )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Rounded.PictureAsPdf, contentDescription = strings.downloadPdfReport) },
+                    label = { Text(strings.downloadPdfReport) },
+                    selected = false,
+                    onClick = onDownloadPdf,
+                    modifier = Modifier.testTag("drawer_pdf_button")
+                )
 
-            // Auto-Backup Settings (Google Sheet & Sia Storage)
-            NavigationDrawerItem(
-                icon = { Icon(Icons.Rounded.CloudDone, contentDescription = strings.backupSettingsMenu) },
-                label = { Text(strings.backupSettingsMenu) },
-                badge = {
-                    Badge {
-                        Text("${prefs.entriesSinceBackup.coerceAtMost(5)}/5")
-                    }
-                },
-                selected = false,
-                onClick = onOpenBackupSettings,
-                modifier = Modifier.testTag("drawer_backup_button")
-            )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Rounded.CloudDone, contentDescription = strings.backupSettingsMenu) },
+                    label = { Text(strings.backupSettingsMenu) },
+                    badge = {
+                        Badge {
+                            Text("${prefs.entriesSinceBackup.coerceAtMost(5)}/5")
+                        }
+                    },
+                    selected = false,
+                    onClick = onOpenBackupSettings,
+                    modifier = Modifier.testTag("drawer_backup_button")
+                )
 
-            // Farm Setup
-            NavigationDrawerItem(
-                icon = { Icon(Icons.Rounded.Groups, contentDescription = strings.farmTeamMenu) },
-                label = { Text(strings.farmTeamMenu) },
-                selected = false,
-                onClick = onOpenFarmSettings,
-                modifier = Modifier.testTag("drawer_farm_button")
-            )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Rounded.Groups, contentDescription = strings.farmTeamMenu) },
+                    label = { Text(strings.farmTeamMenu) },
+                    selected = false,
+                    onClick = onOpenFarmSettings,
+                    modifier = Modifier.testTag("drawer_farm_button")
+                )
+            }
         }
     }
 }

@@ -12,6 +12,9 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.model.ApprovalStatus
 import com.example.data.model.Farm
 import com.example.data.model.LedgerEntry
 import kotlinx.coroutines.flow.Flow
@@ -84,12 +87,15 @@ data class LedgerEntryEntity(
     val entryDateMillis: Long,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
+    val approvalStatus: String = ApprovalStatus.APPROVED.name,
+    val subCategory: String = "",
 ) {
     fun toDomain(): LedgerEntry = LedgerEntry(
         id = id,
         farmId = farmId,
         createdByName = createdByName,
         category = category,
+        subCategory = subCategory,
         amount = amount,
         livestockCount = livestockCount,
         shepherdName = shepherdName,
@@ -99,6 +105,7 @@ data class LedgerEntryEntity(
         entryDateMillis = entryDateMillis,
         createdAtMillis = createdAtMillis,
         updatedAtMillis = updatedAtMillis,
+        approvalStatus = approvalStatus,
     )
 }
 
@@ -133,13 +140,16 @@ interface LedgerEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertEntry(entry: LedgerEntryEntity)
 
+    @Query("UPDATE ledger_entries SET approvalStatus = :status, updatedAtMillis = :updatedAtMillis WHERE id = :entryId")
+    suspend fun updateApprovalStatus(entryId: String, status: String, updatedAtMillis: Long)
+
     @Query("DELETE FROM ledger_entries WHERE id = :entryId")
     suspend fun deleteEntryById(entryId: String)
 }
 
 @Database(
     entities = [FarmEntity::class, LedgerEntryEntity::class],
-    version = 1,
+    version = 3,
     exportSchema = false,
 )
 abstract class FlockDatabase : RoomDatabase() {
@@ -150,13 +160,32 @@ abstract class FlockDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: FlockDatabase? = null
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ledger_entries ADD COLUMN approvalStatus TEXT NOT NULL DEFAULT 'APPROVED'"
+                )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ledger_entries ADD COLUMN subCategory TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         fun getInstance(context: Context): FlockDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     FlockDatabase::class.java,
                     "flock_ledger.db"
-                ).build().also { INSTANCE = it }
+                )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .build()
+                    .also { INSTANCE = it }
             }
     }
 }

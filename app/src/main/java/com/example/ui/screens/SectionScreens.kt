@@ -1,10 +1,7 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,10 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.PersonAdd
-import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.ShoppingCart
@@ -33,7 +29,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -46,17 +41,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.R
+import androidx.compose.ui.unit.sp
+import com.example.data.model.ApprovalStatus
 import com.example.data.model.EntryCategory
+import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.Farm
 import com.example.data.model.FarmSummary
 import com.example.data.model.LedgerEntry
@@ -65,7 +57,7 @@ import com.example.i18n.AppStrings
 import com.example.ui.components.LedgerEntryCard
 import com.example.ui.components.categoryLabel
 import com.example.ui.components.formatCurrency
-import com.example.ui.theme.ExpenseRed
+import com.example.ui.components.subCategoryLabel
 import com.example.ui.theme.LivestockBuyTeal
 import com.example.ui.theme.LivestockSellGreen
 import com.example.ui.theme.MedicineBlue
@@ -74,271 +66,37 @@ import com.example.ui.theme.ShepherdAdvancePurple
 import com.example.ui.theme.ShepherdSalaryIndigo
 
 @Composable
-fun FundflowScreen(
-    farm: Farm,
-    entries: List<LedgerEntry>,
-    summary: FarmSummary,
-    entriesSinceBackup: Int,
-    isAdminView: Boolean,
-    strings: AppStrings,
-    onQuickAddCategory: (EntryCategory) -> Unit,
-    onEditEntry: (LedgerEntry) -> Unit,
-    onViewReceipt: (LedgerEntry) -> Unit,
-    onDownloadPdf: () -> Unit,
-    onOpenBackupSettings: () -> Unit,
-) {
-    if (!isAdminView) {
-        CaretakerHomeScreen(
-            farmName = farm.name,
-            entries = entries,
-            entriesSinceBackup = entriesSinceBackup,
-            strings = strings,
-            onQuickAddCategory = onQuickAddCategory,
-            onViewReceipt = onViewReceipt,
-        )
-        return
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Hero Fundflow / Owner Cash Card
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 640.dp),
-                shape = RoundedCornerShape(24.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-            ) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_flock_hero),
-                        contentDescription = farm.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(215.dp)
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(215.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = 0.25f),
-                                        Color.Black.copy(alpha = 0.78f)
-                                    )
-                                )
-                            )
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = farm.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color.White.copy(alpha = 0.2f)
-                            ) {
-                                Text(
-                                    text = "${strings.currentFlock}: ${summary.currentFlockCount} ${strings.sheepUnit}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-
-                        Text(
-                            text = strings.remainingBalance,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color.White.copy(alpha = 0.85f)
-                        )
-                        Text(
-                            text = formatCurrency(summary.remainingCashBalance, strings),
-                            style = MaterialTheme.typography.displaySmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            FundMetricPill(
-                                label = strings.ownerFundsReceived,
-                                value = formatCurrency(summary.ownerFundsReceived, strings),
-                                modifier = Modifier.weight(1f)
-                            )
-                            FundMetricPill(
-                                label = strings.totalSpent,
-                                value = formatCurrency(summary.totalOutflows, strings),
-                                modifier = Modifier.weight(1f)
-                            )
-                            FundMetricPill(
-                                label = strings.livestockSales,
-                                value = formatCurrency(summary.livestockSalesRevenue, strings),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 640.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Button(
-                    onClick = onDownloadPdf,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp)
-                        .testTag("fundflow_pdf_button")
-                ) {
-                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = strings.downloadPdfReport, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(strings.downloadPdfReport, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                OutlinedButton(
-                    onClick = onOpenBackupSettings,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp)
-                        .testTag("fundflow_backup_button")
-                ) {
-                    Icon(Icons.Rounded.CloudDone, contentDescription = strings.backupSettingsMenu, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(
-                        text = String.format(strings.autoBackupCounter, entriesSinceBackup.coerceAtMost(5)),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-
-        // Category Flow Breakdown
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 640.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    val maxVal = maxOf(
-                        summary.generalExpenses,
-                        summary.medicineVetExpenses,
-                        summary.livestockBuyCost,
-                        summary.shepherdAdvancesTotal,
-                        summary.shepherdSalariesTotal,
-                        1.0
-                    )
-                    SectionBreakdownBar(strings.generalExpenses, summary.generalExpenses, maxVal, ExpenseRed, strings)
-                    SectionBreakdownBar(strings.medicineAndVet, summary.medicineVetExpenses, maxVal, MedicineBlue, strings)
-                    SectionBreakdownBar(strings.livestockBought, summary.livestockBuyCost, maxVal, LivestockBuyTeal, strings)
-                    SectionBreakdownBar(strings.shepherdAdvances, summary.shepherdAdvancesTotal, maxVal, ShepherdAdvancePurple, strings)
-                    SectionBreakdownBar(strings.shepherdSalaries, summary.shepherdSalariesTotal, maxVal, ShepherdSalaryIndigo, strings)
-                }
-            }
-        }
-
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 640.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = strings.recentEntries,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                OutlinedButton(onClick = { onQuickAddCategory(EntryCategory.OWNER_FUNDS) }) {
-                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.size(4.dp))
-                    Text(strings.quickOwnerFunds)
-                }
-            }
-        }
-
-        if (entries.isEmpty()) {
-            item { EmptyLedgerCard(strings = strings, modifier = Modifier.widthIn(max = 640.dp)) }
-        } else {
-            items(entries.take(10), key = { it.id }) { entry ->
-                LedgerEntryCard(
-                    entry = entry,
-                    strings = strings,
-                    canEdit = true,
-                    onEditClick = { onEditEntry(entry) },
-                    onReceiptClick = { onViewReceipt(entry) },
-                    modifier = Modifier.widthIn(max = 640.dp)
-                )
-            }
-        }
-
-        item { Spacer(Modifier.height(72.dp)) }
-    }
-}
-
-@Composable
 fun LedgerScreen(
     entries: List<LedgerEntry>,
-    canEdit: Boolean,
+    isAdminView: Boolean,
     strings: AppStrings,
     onEditEntry: (LedgerEntry) -> Unit,
+    onApproveEntry: (String) -> Unit,
+    onRejectEntry: (String) -> Unit,
     onViewReceipt: (LedgerEntry) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<EntryCategory?>(null) }
+    var selectedSubCategory by remember { mutableStateOf<ExpenseSubCategory?>(null) }
 
-    val filtered = remember(entries, query, selectedCategory) {
+    val filtered = remember(entries, query, selectedCategory, selectedSubCategory) {
         entries.filter { entry ->
             val catMatch = selectedCategory == null || entry.parsedCategory() == selectedCategory
+            val subMatch = selectedCategory != EntryCategory.EXPENSE ||
+                selectedSubCategory == null ||
+                (entry.parsedSubCategory() ?: ExpenseSubCategory.OTHER) == selectedSubCategory
             val q = query.trim().lowercase()
             val textMatch = q.isEmpty() ||
                 entry.title.lowercase().contains(q) ||
                 entry.shepherdName.lowercase().contains(q) ||
                 entry.note.lowercase().contains(q)
-            catMatch && textMatch
+            catMatch && subMatch && textMatch
         }
     }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -366,15 +124,52 @@ fun LedgerScreen(
             ) {
                 FilterChip(
                     selected = selectedCategory == null,
-                    onClick = { selectedCategory = null },
+                    onClick = {
+                        selectedCategory = null
+                        selectedSubCategory = null
+                    },
                     label = { Text(strings.catAll) }
                 )
                 EntryCategory.entries.forEach { cat ->
                     FilterChip(
                         selected = selectedCategory == cat,
-                        onClick = { selectedCategory = if (selectedCategory == cat) null else cat },
+                        onClick = {
+                            selectedCategory = if (selectedCategory == cat) null else cat
+                            if (selectedCategory != EntryCategory.EXPENSE) {
+                                selectedSubCategory = null
+                            }
+                        },
                         label = { Text(categoryLabel(cat, strings)) }
                     )
+                }
+            }
+        }
+
+        if (selectedCategory == EntryCategory.EXPENSE) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 640.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedSubCategory == null,
+                        onClick = { selectedSubCategory = null },
+                        label = { Text(strings.catAll) },
+                        modifier = Modifier.testTag("filter_subcat_all")
+                    )
+                    ExpenseSubCategory.entries.forEach { sub ->
+                        FilterChip(
+                            selected = selectedSubCategory == sub,
+                            onClick = {
+                                selectedSubCategory = if (selectedSubCategory == sub) null else sub
+                            },
+                            label = { Text(subCategoryLabel(sub, strings)) },
+                            modifier = Modifier.testTag("filter_subcat_${sub.name.lowercase()}")
+                        )
+                    }
                 }
             }
         }
@@ -383,18 +178,23 @@ fun LedgerScreen(
             item { EmptyLedgerCard(strings = strings, modifier = Modifier.widthIn(max = 640.dp)) }
         } else {
             items(filtered, key = { it.id }) { entry ->
+                val isPending = entry.parsedApprovalStatus() == ApprovalStatus.PENDING
                 LedgerEntryCard(
                     entry = entry,
                     strings = strings,
-                    canEdit = canEdit,
+                    canEdit = isAdminView,
                     onEditClick = { onEditEntry(entry) },
                     onReceiptClick = { onViewReceipt(entry) },
+                    onApproveClick = if (isAdminView && isPending) {
+                        { onApproveEntry(entry.id) }
+                    } else null,
+                    onRejectClick = if (isAdminView && isPending) {
+                        { onRejectEntry(entry.id) }
+                    } else null,
                     modifier = Modifier.widthIn(max = 640.dp)
                 )
             }
         }
-
-        item { Spacer(Modifier.height(72.dp)) }
     }
 }
 
@@ -403,10 +203,12 @@ fun TradeScreen(
     farm: Farm,
     entries: List<LedgerEntry>,
     summary: FarmSummary,
-    canEdit: Boolean,
+    isAdminView: Boolean,
     strings: AppStrings,
     onAddTrade: (EntryCategory) -> Unit,
     onEditEntry: (LedgerEntry) -> Unit,
+    onApproveEntry: (String) -> Unit,
+    onRejectEntry: (String) -> Unit,
     onViewReceipt: (LedgerEntry) -> Unit,
 ) {
     val tradeEntries = remember(entries) {
@@ -418,7 +220,7 @@ fun TradeScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -464,23 +266,25 @@ fun TradeScreen(
             ) {
                 Button(
                     onClick = { onAddTrade(EntryCategory.LIVESTOCK_BUY) },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("trade_buy_button")
                 ) {
                     Icon(Icons.Rounded.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text(strings.catLivestockBuy)
+                    Text(strings.catLivestockBuy, fontSize = 13.sp, lineHeight = 18.sp)
                 }
                 OutlinedButton(
                     onClick = { onAddTrade(EntryCategory.LIVESTOCK_SELL) },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("trade_sell_button")
                 ) {
                     Icon(Icons.Rounded.Sell, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text(strings.catLivestockSell)
+                    Text(strings.catLivestockSell, fontSize = 13.sp, lineHeight = 18.sp)
                 }
             }
         }
@@ -489,18 +293,23 @@ fun TradeScreen(
             item { EmptyLedgerCard(strings = strings, modifier = Modifier.widthIn(max = 640.dp)) }
         } else {
             items(tradeEntries, key = { it.id }) { entry ->
+                val isPending = entry.parsedApprovalStatus() == ApprovalStatus.PENDING
                 LedgerEntryCard(
                     entry = entry,
                     strings = strings,
-                    canEdit = canEdit,
+                    canEdit = isAdminView,
                     onEditClick = { onEditEntry(entry) },
                     onReceiptClick = { onViewReceipt(entry) },
+                    onApproveClick = if (isAdminView && isPending) {
+                        { onApproveEntry(entry.id) }
+                    } else null,
+                    onRejectClick = if (isAdminView && isPending) {
+                        { onRejectEntry(entry.id) }
+                    } else null,
                     modifier = Modifier.widthIn(max = 640.dp)
                 )
             }
         }
-
-        item { Spacer(Modifier.height(72.dp)) }
     }
 }
 
@@ -508,7 +317,7 @@ fun TradeScreen(
 fun SalariesScreen(
     entries: List<LedgerEntry>,
     summary: FarmSummary,
-    canEdit: Boolean,
+    isAdminView: Boolean,
     strings: AppStrings,
     onAddShepherd: (String) -> Unit,
     onPayShepherd: (String) -> Unit,
@@ -525,7 +334,7 @@ fun SalariesScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -551,7 +360,29 @@ fun SalariesScreen(
             }
         }
 
-        if (canEdit) {
+        if (!isAdminView) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 640.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Rounded.Lock, contentDescription = strings.adminOnlyTag)
+                        Text(
+                            text = "${strings.adminOnlyTag}: ${strings.caretakerRestrictedHint}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        } else {
             item {
                 Card(
                     modifier = Modifier
@@ -609,6 +440,7 @@ fun SalariesScreen(
             items(summary.shepherdBreakdown, key = { it.shepherdName }) { sh ->
                 ShepherdSummaryRowCard(
                     item = sh,
+                    isAdminView = isAdminView,
                     strings = strings,
                     onPayClick = { onPayShepherd(sh.shepherdName) },
                     modifier = Modifier.widthIn(max = 640.dp)
@@ -632,15 +464,13 @@ fun SalariesScreen(
                 LedgerEntryCard(
                     entry = entry,
                     strings = strings,
-                    canEdit = canEdit,
+                    canEdit = isAdminView,
                     onEditClick = { onEditEntry(entry) },
                     onReceiptClick = { onViewReceipt(entry) },
                     modifier = Modifier.widthIn(max = 640.dp)
                 )
             }
         }
-
-        item { Spacer(Modifier.height(72.dp)) }
     }
 }
 
@@ -648,19 +478,26 @@ fun SalariesScreen(
 fun MedicalScreen(
     entries: List<LedgerEntry>,
     summary: FarmSummary,
-    canEdit: Boolean,
+    isAdminView: Boolean,
     strings: AppStrings,
     onAddMedical: () -> Unit,
     onEditEntry: (LedgerEntry) -> Unit,
+    onApproveEntry: (String) -> Unit,
+    onRejectEntry: (String) -> Unit,
     onViewReceipt: (LedgerEntry) -> Unit,
 ) {
     val medEntries = remember(entries) {
-        entries.filter { it.parsedCategory() == EntryCategory.MEDICINE_VET }
+        entries.filter {
+            it.parsedCategory() == EntryCategory.MEDICINE_VET ||
+                (it.parsedCategory() == EntryCategory.EXPENSE && it.parsedSubCategory() == ExpenseSubCategory.TREATMENT)
+        }
     }
+    val treatmentAndMedTotal = summary.medicineVetExpenses +
+        (summary.farmExpenseSubTotals[ExpenseSubCategory.TREATMENT] ?: 0.0)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -672,12 +509,11 @@ fun MedicalScreen(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MedicineBlue.copy(alpha = 0.12f))
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
@@ -686,7 +522,7 @@ fun MedicalScreen(
                             color = MedicineBlue
                         )
                         Text(
-                            text = formatCurrency(summary.medicineVetExpenses, strings),
+                            text = formatCurrency(treatmentAndMedTotal, strings),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = MedicineBlue
@@ -694,11 +530,13 @@ fun MedicalScreen(
                     }
                     Button(
                         onClick = onAddMedical,
-                        modifier = Modifier.testTag("medical_add_button")
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("medical_add_button")
                     ) {
                         Icon(Icons.Rounded.MedicalServices, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(6.dp))
-                        Text(strings.quickMedicine)
+                        Text(strings.quickMedicine, fontSize = 14.sp, lineHeight = 18.sp)
                     }
                 }
             }
@@ -708,24 +546,30 @@ fun MedicalScreen(
             item { EmptyLedgerCard(strings = strings, modifier = Modifier.widthIn(max = 640.dp)) }
         } else {
             items(medEntries, key = { it.id }) { entry ->
+                val isPending = entry.parsedApprovalStatus() == ApprovalStatus.PENDING
                 LedgerEntryCard(
                     entry = entry,
                     strings = strings,
-                    canEdit = canEdit,
+                    canEdit = isAdminView,
                     onEditClick = { onEditEntry(entry) },
                     onReceiptClick = { onViewReceipt(entry) },
+                    onApproveClick = if (isAdminView && isPending) {
+                        { onApproveEntry(entry.id) }
+                    } else null,
+                    onRejectClick = if (isAdminView && isPending) {
+                        { onRejectEntry(entry.id) }
+                    } else null,
                     modifier = Modifier.widthIn(max = 640.dp)
                 )
             }
         }
-
-        item { Spacer(Modifier.height(72.dp)) }
     }
 }
 
 @Composable
 private fun ShepherdSummaryRowCard(
     item: ShepherdLedgerSummary,
+    isAdminView: Boolean,
     strings: AppStrings,
     onPayClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -747,15 +591,17 @@ private fun ShepherdSummaryRowCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                OutlinedButton(onClick = onPayClick) {
-                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.size(4.dp))
-                    Text(strings.payShepherdQuick)
+                if (isAdminView) {
+                    OutlinedButton(onClick = onPayClick) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text(strings.payShepherdQuick, fontSize = 12.sp)
+                    }
                 }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SectionStatChip(
                     label = strings.totalAdvanceGiven,
@@ -781,71 +627,29 @@ private fun ShepherdSummaryRowCard(
 }
 
 @Composable
-private fun FundMetricPill(label: String, value: String, modifier: Modifier = Modifier) {
+fun SectionStatChip(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = Color.Black.copy(alpha = 0.35f)
+        shape = RoundedCornerShape(14.dp),
+        color = color.copy(alpha = 0.12f)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.8f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = color,
+                fontWeight = FontWeight.Medium
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
+                fontWeight = FontWeight.Bold
             )
-        }
-    }
-}
-
-@Composable
-private fun SectionBreakdownBar(
-    label: String,
-    amount: Double,
-    maxAmount: Double,
-    color: Color,
-    strings: AppStrings,
-) {
-    val progress = (amount / maxAmount).toFloat().coerceIn(0f, 1f)
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text(formatCurrency(amount, strings), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = color)
-        }
-        LinearProgressIndicator(
-            progress = { progress },
-            color = color,
-            trackColor = color.copy(alpha = 0.14f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-        )
-    }
-}
-
-@Composable
-private fun SectionStatChip(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = color.copy(alpha = 0.12f)
-    ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

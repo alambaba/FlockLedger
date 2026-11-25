@@ -12,8 +12,15 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.i18n.AppLanguage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.security.MessageDigest
+import java.security.SecureRandom
 
 private val Context.appDataStore: DataStore<Preferences> by preferencesDataStore(name = "flock_ledger_prefs")
+
+enum class UserRole {
+    ADMIN,
+    CARETAKER
+}
 
 data class UserPreferences(
     val language: AppLanguage = AppLanguage.SINDHI,
@@ -27,7 +34,14 @@ data class UserPreferences(
     val entriesSinceBackup: Int = 0,
     val lastBackupTimestampMillis: Long = 0L,
     val lastBackupSummary: String = "",
-)
+    val adminPinHash: String = "",
+    val adminPinSalt: String = "",
+    val caretakerPinHash: String = "",
+    val caretakerPinSalt: String = "",
+) {
+    val pinsConfigured: Boolean
+        get() = adminPinHash.isNotEmpty() && caretakerPinHash.isNotEmpty()
+}
 
 class AppPreferencesRepository(private val context: Context) {
 
@@ -43,6 +57,10 @@ class AppPreferencesRepository(private val context: Context) {
         val ENTRIES_SINCE_BACKUP = intPreferencesKey("entries_since_backup")
         val LAST_BACKUP_MILLIS = longPreferencesKey("last_backup_millis")
         val LAST_BACKUP_SUMMARY = stringPreferencesKey("last_backup_summary")
+        val ADMIN_PIN_HASH = stringPreferencesKey("admin_pin_hash")
+        val ADMIN_PIN_SALT = stringPreferencesKey("admin_pin_salt")
+        val CARETAKER_PIN_HASH = stringPreferencesKey("caretaker_pin_hash")
+        val CARETAKER_PIN_SALT = stringPreferencesKey("caretaker_pin_salt")
     }
 
     val preferencesFlow: Flow<UserPreferences> = context.appDataStore.data.map { prefs ->
@@ -59,6 +77,10 @@ class AppPreferencesRepository(private val context: Context) {
             entriesSinceBackup = prefs[Keys.ENTRIES_SINCE_BACKUP] ?: 0,
             lastBackupTimestampMillis = prefs[Keys.LAST_BACKUP_MILLIS] ?: 0L,
             lastBackupSummary = prefs[Keys.LAST_BACKUP_SUMMARY] ?: "",
+            adminPinHash = prefs[Keys.ADMIN_PIN_HASH] ?: "",
+            adminPinSalt = prefs[Keys.ADMIN_PIN_SALT] ?: "",
+            caretakerPinHash = prefs[Keys.CARETAKER_PIN_HASH] ?: "",
+            caretakerPinSalt = prefs[Keys.CARETAKER_PIN_SALT] ?: "",
         )
     }
 
@@ -78,6 +100,20 @@ class AppPreferencesRepository(private val context: Context) {
         context.appDataStore.edit { it[Keys.SELECTED_FARM_ID] = farmId }
     }
 
+    suspend fun savePins(adminPin: String, caretakerPin: String) {
+        val adminSalt = generateSaltHex()
+        val caretakerSalt = generateSaltHex()
+        val adminHash = hashPin(adminPin.trim(), adminSalt)
+        val caretakerHash = hashPin(caretakerPin.trim(), caretakerSalt)
+
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.ADMIN_PIN_SALT] = adminSalt
+            prefs[Keys.ADMIN_PIN_HASH] = adminHash
+            prefs[Keys.CARETAKER_PIN_SALT] = caretakerSalt
+            prefs[Keys.CARETAKER_PIN_HASH] = caretakerHash
+        }
+    }
+
     suspend fun saveBackupEndpoints(
         googleSheetUrl: String,
         siaEndpointUrl: String,
@@ -92,9 +128,6 @@ class AppPreferencesRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Increments entry counter and returns the new count.
-     */
     suspend fun incrementEntryCounter(): Int {
         var newCount = 0
         context.appDataStore.edit { prefs ->
@@ -112,6 +145,41 @@ class AppPreferencesRepository(private val context: Context) {
             }
             prefs[Keys.LAST_BACKUP_MILLIS] = timestampMillis
             prefs[Keys.LAST_BACKUP_SUMMARY] = summary
+        }
+    }
+
+    companion object {
+        private val random = SecureRandom()
+
+        fun generateSaltHex(): String {
+            val bytes = ByteArray(16)
+            random.nextBytes(bytes)
+            return bytes.joinToString("") { "%02x".format(it) }
+        }
+
+        fun hashPin(pin: String, saltHex: String): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val input = "$saltHex:$pin".toByteArray(Charsets.UTF_8)
+            return digest.digest(input).joinToString("") { "%02x".format(it) }
+        }
+
+        fun resolveRoleForPin(pin: String, prefs: UserPreferences): UserRole? {
+            val clean = pin.trim()
+            if (clean.isEmpty() || !prefs.pinsConfigured) return null
+            val adminCandidate = hashPin(clean, prefs.adminPinSalt)
+            if (constantTimeEquals(adminCandidate, prefs.adminPinHash)) return UserRole.ADMIN
+            val caretakerCandidate = hashPin(clean, prefs.caretakerPinSalt)
+            if (constantTimeEquals(caretakerCandidate, prefs.caretakerPinHash)) return UserRole.CARETAKER
+            return null
+        }
+
+        private fun constantTimeEquals(a: String, b: String): Boolean {
+            if (a.length != b.length) return false
+            var diff = 0
+            for (i in a.indices) {
+                diff = diff or (a[i].code xor b[i].code)
+            }
+            return diff == 0
         }
     }
 }
