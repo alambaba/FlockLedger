@@ -184,6 +184,7 @@ private fun MainWorkspace(
     var showBackupDialog by remember { mutableStateOf(false) }
     var showFarmDialog by remember { mutableStateOf(false) }
     var showChangePinsDialog by remember { mutableStateOf(false) }
+    var showStorageInfoDialog by remember { mutableStateOf(false) }
 
     val navigateToRoute: (String) -> Unit = { route ->
         if (currentRoute != route) {
@@ -277,6 +278,10 @@ private fun MainWorkspace(
                 onOpenFarmSettings = {
                     scope.launch { drawerState.close() }
                     showFarmDialog = true
+                },
+                onOpenStorageInfo = {
+                    scope.launch { drawerState.close() }
+                    showStorageInfoDialog = true
                 }
             )
         }
@@ -658,6 +663,13 @@ private fun MainWorkspace(
             onSavePins = { adminPin, caretakerPin ->
                 viewModel.setupPins(adminPin, caretakerPin, initialRole = UserRole.ADMIN)
             }
+        )
+    }
+
+    if (showStorageInfoDialog) {
+        StorageInfoDialog(
+            strings = strings,
+            onDismiss = { showStorageInfoDialog = false }
         )
     }
 }

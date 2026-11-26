@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.Password
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Badge
@@ -161,6 +162,7 @@ fun FlockDrawerSheetContent(
     onDownloadPdf: () -> Unit,
     onOpenBackupSettings: () -> Unit,
     onOpenFarmSettings: () -> Unit,
+    onOpenStorageInfo: () -> Unit,
 ) {
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.surface
@@ -306,6 +308,16 @@ fun FlockDrawerSheetContent(
                     modifier = Modifier.testTag("drawer_farm_button")
                 )
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Rounded.Storage, contentDescription = strings.storageInfoMenu) },
+                label = { Text(strings.storageInfoMenu) },
+                selected = false,
+                onClick = onOpenStorageInfo,
+                modifier = Modifier.testTag("drawer_storage_info_button")
+            )
         }
     }
 }
