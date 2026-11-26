@@ -74,6 +74,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.EntryCategory
 import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.LedgerEntry
+import com.example.data.model.PaymentMethod
 import com.example.i18n.AppStrings
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.LivestockBuyTeal
@@ -95,9 +96,12 @@ fun categoryLabel(category: EntryCategory, strings: AppStrings): String = when (
     EntryCategory.MEDICINE_VET -> strings.catMedicineVet
     EntryCategory.LIVESTOCK_BUY -> strings.catLivestockBuy
     EntryCategory.LIVESTOCK_SELL -> strings.catLivestockSell
+    EntryCategory.LIVESTOCK_DEATH -> strings.catLivestockDeath
     EntryCategory.SHEPHERD_ADVANCE -> strings.catShepherdAdvance
+    EntryCategory.SHEPHERD_ADVANCE_RECOVERY -> strings.catAdvanceRecovery
     EntryCategory.SHEPHERD_SALARY -> strings.catShepherdSalary
     EntryCategory.OWNER_FUNDS -> strings.catOwnerFunds
+    EntryCategory.OTHER_INCOME -> strings.catOtherIncome
     EntryCategory.LOAN_TAKEN -> strings.catLoanTaken
     EntryCategory.LOAN_GIVEN -> strings.catLoanGiven
     EntryCategory.LOAN_REPAY -> strings.catLoanRepay
@@ -117,9 +121,12 @@ fun categoryColor(category: EntryCategory): Color = when (category) {
     EntryCategory.MEDICINE_VET -> MedicineBlue
     EntryCategory.LIVESTOCK_BUY -> LivestockBuyTeal
     EntryCategory.LIVESTOCK_SELL -> LivestockSellGreen
+    EntryCategory.LIVESTOCK_DEATH -> ExpenseRed
     EntryCategory.SHEPHERD_ADVANCE -> ShepherdAdvancePurple
+    EntryCategory.SHEPHERD_ADVANCE_RECOVERY -> LivestockSellGreen
     EntryCategory.SHEPHERD_SALARY -> ShepherdSalaryIndigo
     EntryCategory.OWNER_FUNDS -> OwnerFundsGold
+    EntryCategory.OTHER_INCOME -> LivestockSellGreen
     EntryCategory.LOAN_TAKEN -> LoanTakenAmber
     EntryCategory.LOAN_GIVEN -> LoanGivenTeal
     EntryCategory.LOAN_REPAY -> ShepherdSalaryIndigo
@@ -153,6 +160,7 @@ fun EntryEditorDialog(
         note: String,
         receiptBase64: String?,
         entryDateMillis: Long,
+        paymentMethod: PaymentMethod,
     ) -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
@@ -165,6 +173,9 @@ fun EntryEditorDialog(
     }
     var selectedSubCategory by remember(editingEntry, initialSubCategory) {
         mutableStateOf(editingEntry?.parsedSubCategory() ?: initialSubCategory ?: ExpenseSubCategory.FEED)
+    }
+    var paymentMethod by remember(editingEntry) {
+        mutableStateOf(editingEntry?.parsedPaymentMethod() ?: PaymentMethod.CASH)
     }
     var title by remember(editingEntry) {
         mutableStateOf(
@@ -296,31 +307,51 @@ fun EntryEditorDialog(
                     }
                 }
 
-                // Quick Segmented Toggle for Buy/Sell or Advance/Salary
-                if (category == EntryCategory.LIVESTOCK_BUY || category == EntryCategory.LIVESTOCK_SELL) {
+                // Quick Segmented Toggle for Livestock or Shepherd operations
+                if (category == EntryCategory.LIVESTOCK_BUY || category == EntryCategory.LIVESTOCK_SELL || category == EntryCategory.LIVESTOCK_DEATH) {
+                    val allowDeath = EntryCategory.LIVESTOCK_DEATH in allowedCategories
+                    val itemCount = if (allowDeath) 3 else 2
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         SegmentedButton(
                             selected = category == EntryCategory.LIVESTOCK_BUY,
                             onClick = { category = EntryCategory.LIVESTOCK_BUY },
-                            shape = SegmentedButtonDefaults.itemShape(0, 2)
+                            shape = SegmentedButtonDefaults.itemShape(0, itemCount)
                         ) { Text(strings.buyOption) }
                         SegmentedButton(
                             selected = category == EntryCategory.LIVESTOCK_SELL,
                             onClick = { category = EntryCategory.LIVESTOCK_SELL },
-                            shape = SegmentedButtonDefaults.itemShape(1, 2)
+                            shape = SegmentedButtonDefaults.itemShape(1, itemCount)
                         ) { Text(strings.sellOption) }
+                        if (allowDeath) {
+                            SegmentedButton(
+                                selected = category == EntryCategory.LIVESTOCK_DEATH,
+                                onClick = {
+                                    category = EntryCategory.LIVESTOCK_DEATH
+                                    if (title.isBlank()) title = defaultTitleForCategory(category, strings)
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(2, itemCount)
+                            ) { Text(strings.deathOption) }
+                        }
                     }
-                } else if (category == EntryCategory.SHEPHERD_ADVANCE || category == EntryCategory.SHEPHERD_SALARY) {
+                } else if (category == EntryCategory.SHEPHERD_ADVANCE ||
+                    category == EntryCategory.SHEPHERD_ADVANCE_RECOVERY ||
+                    category == EntryCategory.SHEPHERD_SALARY
+                ) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         SegmentedButton(
                             selected = category == EntryCategory.SHEPHERD_ADVANCE,
                             onClick = { category = EntryCategory.SHEPHERD_ADVANCE },
-                            shape = SegmentedButtonDefaults.itemShape(0, 2)
+                            shape = SegmentedButtonDefaults.itemShape(0, 3)
                         ) { Text(strings.advanceOption) }
+                        SegmentedButton(
+                            selected = category == EntryCategory.SHEPHERD_ADVANCE_RECOVERY,
+                            onClick = { category = EntryCategory.SHEPHERD_ADVANCE_RECOVERY },
+                            shape = SegmentedButtonDefaults.itemShape(1, 3)
+                        ) { Text(strings.recoverAdvanceAction) }
                         SegmentedButton(
                             selected = category == EntryCategory.SHEPHERD_SALARY,
                             onClick = { category = EntryCategory.SHEPHERD_SALARY },
-                            shape = SegmentedButtonDefaults.itemShape(1, 2)
+                            shape = SegmentedButtonDefaults.itemShape(2, 3)
                         ) { Text(strings.salaryOption) }
                     }
                 }
@@ -336,25 +367,49 @@ fun EntryEditorDialog(
                         .testTag("entry_title_input")
                 )
 
-                // Amount
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = { raw ->
-                        if (raw.all { it.isDigit() || it == '.' }) {
-                            amountText = raw
-                            validationError = null
-                        }
-                    },
-                    label = { Text(strings.fieldAmount) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("entry_amount_input")
-                )
+                // Amount (hidden for Livestock Death since deaths are flock-count adjustments)
+                if (category != EntryCategory.LIVESTOCK_DEATH) {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { raw ->
+                            if (raw.all { it.isDigit() || it == '.' }) {
+                                amountText = raw
+                                validationError = null
+                            }
+                        },
+                        label = { Text(strings.fieldAmount) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("entry_amount_input")
+                    )
 
-                // Sheep Count (for Livestock Buy / Sell)
-                if (category == EntryCategory.LIVESTOCK_BUY || category == EntryCategory.LIVESTOCK_SELL) {
+                    // Cash vs Credit Payment Method Toggle
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(strings.fieldPaymentMethod, style = MaterialTheme.typography.labelLarge)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            SegmentedButton(
+                                selected = paymentMethod == PaymentMethod.CASH,
+                                onClick = { paymentMethod = PaymentMethod.CASH },
+                                shape = SegmentedButtonDefaults.itemShape(0, 2),
+                                modifier = Modifier.testTag("payment_method_cash")
+                            ) { Text(strings.methodCash) }
+                            SegmentedButton(
+                                selected = paymentMethod == PaymentMethod.CREDIT,
+                                onClick = { paymentMethod = PaymentMethod.CREDIT },
+                                shape = SegmentedButtonDefaults.itemShape(1, 2),
+                                modifier = Modifier.testTag("payment_method_credit")
+                            ) { Text(strings.methodCredit) }
+                        }
+                    }
+                }
+
+                // Sheep Count (for Livestock Buy / Sell / Death)
+                if (category == EntryCategory.LIVESTOCK_BUY ||
+                    category == EntryCategory.LIVESTOCK_SELL ||
+                    category == EntryCategory.LIVESTOCK_DEATH
+                ) {
                     OutlinedTextField(
                         value = sheepCountText,
                         onValueChange = { raw ->
@@ -372,8 +427,11 @@ fun EntryEditorDialog(
                     )
                 }
 
-                // Shepherd Name (for Advance / Salary)
-                if (category == EntryCategory.SHEPHERD_ADVANCE || category == EntryCategory.SHEPHERD_SALARY) {
+                // Shepherd Name (for Advance / Advance Recovery / Salary)
+                if (category == EntryCategory.SHEPHERD_ADVANCE ||
+                    category == EntryCategory.SHEPHERD_ADVANCE_RECOVERY ||
+                    category == EntryCategory.SHEPHERD_SALARY
+                ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (shepherds.isNotEmpty()) {
                             Row(
@@ -528,14 +586,23 @@ fun EntryEditorDialog(
                     }
                     Button(
                         onClick = {
-                            val amt = amountText.toDoubleOrNull()
+                            val amt = if (category == EntryCategory.LIVESTOCK_DEATH) {
+                                amountText.toDoubleOrNull() ?: 0.0
+                            } else {
+                                amountText.toDoubleOrNull()
+                            }
                             val count = sheepCountText.toLongOrNull() ?: 0L
                             when {
                                 title.isBlank() -> validationError = strings.errorMissingTitle
-                                amt == null || amt <= 0.0 -> validationError = strings.errorInvalidAmount
-                                (category == EntryCategory.LIVESTOCK_BUY || category == EntryCategory.LIVESTOCK_SELL) && count <= 0L ->
+                                category != EntryCategory.LIVESTOCK_DEATH && (amt == null || amt <= 0.0) ->
+                                    validationError = strings.errorInvalidAmount
+                                (category == EntryCategory.LIVESTOCK_BUY ||
+                                    category == EntryCategory.LIVESTOCK_SELL ||
+                                    category == EntryCategory.LIVESTOCK_DEATH) && count <= 0L ->
                                     validationError = strings.errorMissingSheepCount
-                                (category == EntryCategory.SHEPHERD_ADVANCE || category == EntryCategory.SHEPHERD_SALARY) && shepherdOrPartyName.isBlank() ->
+                                (category == EntryCategory.SHEPHERD_ADVANCE ||
+                                    category == EntryCategory.SHEPHERD_ADVANCE_RECOVERY ||
+                                    category == EntryCategory.SHEPHERD_SALARY) && shepherdOrPartyName.isBlank() ->
                                     validationError = strings.errorMissingShepherd
                                 category.isLoanCategory() && shepherdOrPartyName.isBlank() ->
                                     validationError = strings.errorMissingParty
@@ -543,12 +610,13 @@ fun EntryEditorDialog(
                                     category,
                                     if (category == EntryCategory.EXPENSE) selectedSubCategory.name else "",
                                     title.trim(),
-                                    amt,
+                                    amt ?: 0.0,
                                     count,
                                     shepherdOrPartyName.trim(),
                                     note.trim(),
                                     receiptBase64,
                                     entryDateMillis,
+                                    if (category == EntryCategory.LIVESTOCK_DEATH) PaymentMethod.CASH else paymentMethod,
                                 )
                             }
                         },
@@ -585,9 +653,12 @@ private fun defaultTitleForCategory(category: EntryCategory, strings: AppStrings
     EntryCategory.MEDICINE_VET -> ""
     EntryCategory.LIVESTOCK_BUY -> strings.catLivestockBuy
     EntryCategory.LIVESTOCK_SELL -> strings.catLivestockSell
+    EntryCategory.LIVESTOCK_DEATH -> strings.catLivestockDeath
     EntryCategory.SHEPHERD_ADVANCE -> strings.catShepherdAdvance
+    EntryCategory.SHEPHERD_ADVANCE_RECOVERY -> strings.catAdvanceRecovery
     EntryCategory.SHEPHERD_SALARY -> strings.catShepherdSalary
     EntryCategory.OWNER_FUNDS -> strings.catOwnerFunds
+    EntryCategory.OTHER_INCOME -> strings.catOtherIncome
     EntryCategory.LOAN_TAKEN -> strings.catLoanTaken
     EntryCategory.LOAN_GIVEN -> strings.catLoanGiven
     EntryCategory.LOAN_REPAY -> strings.catLoanRepay

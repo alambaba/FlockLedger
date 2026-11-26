@@ -52,8 +52,10 @@ import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.Farm
 import com.example.data.model.FarmSummary
 import com.example.data.model.LedgerEntry
+import com.example.data.model.MonthlyBudgetStatus
 import com.example.data.model.ShepherdLedgerSummary
 import com.example.i18n.AppStrings
+import com.example.ui.components.BudgetCategoryProgressItem
 import com.example.ui.components.LedgerEntryCard
 import com.example.ui.components.categoryLabel
 import com.example.ui.components.formatCurrency
@@ -214,7 +216,9 @@ fun TradeScreen(
     val tradeEntries = remember(entries) {
         entries.filter {
             val cat = it.parsedCategory()
-            cat == EntryCategory.LIVESTOCK_BUY || cat == EntryCategory.LIVESTOCK_SELL
+            cat == EntryCategory.LIVESTOCK_BUY ||
+                cat == EntryCategory.LIVESTOCK_SELL ||
+                cat == EntryCategory.LIVESTOCK_DEATH
         }
     }
 
@@ -247,44 +251,71 @@ fun TradeScreen(
         }
 
         item {
-            SectionStatChip(
-                label = strings.currentFlock,
-                value = "${summary.currentFlockCount} ${strings.sheepUnit} (Init: ${farm.initialFlockCount})",
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 640.dp)
-            )
-        }
-
-        item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 640.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Button(
-                    onClick = { onAddTrade(EntryCategory.LIVESTOCK_BUY) },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("trade_buy_button")
+                SectionStatChip(
+                    label = "${strings.currentFlock} (${strings.openingFlockLabel}: ${summary.openingFlockCount} | ${strings.deathsCountLabel}: ${summary.livestockDeathCount})",
+                    value = "${summary.currentFlockCount} ${strings.sheepUnit}",
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                SectionStatChip(
+                    label = "${strings.kpiInventoryValue} (${strings.avgCostPerSheepLabel}: ${formatCurrency(summary.avgPurchaseCostPerSheep, strings)})",
+                    value = formatCurrency(summary.livestockInventoryValue, strings),
+                    color = LivestockBuyTeal,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 640.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Rounded.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(strings.catLivestockBuy, fontSize = 13.sp, lineHeight = 18.sp)
+                    Button(
+                        onClick = { onAddTrade(EntryCategory.LIVESTOCK_BUY) },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("trade_buy_button")
+                    ) {
+                        Icon(Icons.Rounded.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(strings.catLivestockBuy, fontSize = 13.sp, lineHeight = 18.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { onAddTrade(EntryCategory.LIVESTOCK_SELL) },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("trade_sell_button")
+                    ) {
+                        Icon(Icons.Rounded.Sell, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(strings.catLivestockSell, fontSize = 13.sp, lineHeight = 18.sp)
+                    }
                 }
-                OutlinedButton(
-                    onClick = { onAddTrade(EntryCategory.LIVESTOCK_SELL) },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("trade_sell_button")
-                ) {
-                    Icon(Icons.Rounded.Sell, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(strings.catLivestockSell, fontSize = 13.sp, lineHeight = 18.sp)
+                if (isAdminView) {
+                    OutlinedButton(
+                        onClick = { onAddTrade(EntryCategory.LIVESTOCK_DEATH) },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("trade_death_button")
+                    ) {
+                        Text(strings.recordDeathAction, fontSize = 13.sp, lineHeight = 18.sp)
+                    }
                 }
             }
         }
@@ -328,7 +359,9 @@ fun SalariesScreen(
     val salaryEntries = remember(entries) {
         entries.filter {
             val cat = it.parsedCategory()
-            cat == EntryCategory.SHEPHERD_ADVANCE || cat == EntryCategory.SHEPHERD_SALARY
+            cat == EntryCategory.SHEPHERD_ADVANCE ||
+                cat == EntryCategory.SHEPHERD_ADVANCE_RECOVERY ||
+                cat == EntryCategory.SHEPHERD_SALARY
         }
     }
 
@@ -339,24 +372,46 @@ fun SalariesScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         item {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 640.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SectionStatChip(
-                    label = strings.shepherdAdvances,
-                    value = formatCurrency(summary.shepherdAdvancesTotal, strings),
-                    color = ShepherdAdvancePurple,
-                    modifier = Modifier.weight(1f)
-                )
-                SectionStatChip(
-                    label = strings.shepherdSalaries,
-                    value = formatCurrency(summary.shepherdSalariesTotal, strings),
-                    color = ShepherdSalaryIndigo,
-                    modifier = Modifier.weight(1f)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SectionStatChip(
+                        label = strings.shepherdSalaries,
+                        value = formatCurrency(summary.shepherdSalariesTotal, strings),
+                        color = ShepherdSalaryIndigo,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SectionStatChip(
+                        label = strings.shepherdAdvances,
+                        value = formatCurrency(summary.shepherdAdvancesTotal, strings),
+                        color = ShepherdAdvancePurple,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SectionStatChip(
+                        label = strings.outstandingAdvanceLabel,
+                        value = formatCurrency(summary.shepherdAdvancesOutstanding, strings),
+                        color = OwnerFundsGold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SectionStatChip(
+                        label = strings.salaryPayableLabel,
+                        value = formatCurrency(summary.shepherdSalariesPayable, strings),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 
@@ -478,9 +533,11 @@ fun SalariesScreen(
 fun MedicalScreen(
     entries: List<LedgerEntry>,
     summary: FarmSummary,
+    budgetStatus: MonthlyBudgetStatus,
     isAdminView: Boolean,
     strings: AppStrings,
     onAddMedical: () -> Unit,
+    onOpenMonthlyBudgets: () -> Unit,
     onEditEntry: (LedgerEntry) -> Unit,
     onApproveEntry: (String) -> Unit,
     onRejectEntry: (String) -> Unit,
@@ -538,6 +595,44 @@ fun MedicalScreen(
                         Spacer(Modifier.size(6.dp))
                         Text(strings.quickMedicine, fontSize = 14.sp, lineHeight = 18.sp)
                     }
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 640.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = strings.monthlyBudgetsTitle,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (isAdminView) {
+                            OutlinedButton(onClick = onOpenMonthlyBudgets) {
+                                Text(strings.setBudgetCapsAction, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    BudgetCategoryProgressItem(
+                        categoryTitle = strings.medicineAndVet,
+                        budget = budgetStatus.medVetBudget,
+                        strings = strings,
+                    )
                 }
             }
         }
@@ -604,20 +699,37 @@ private fun ShepherdSummaryRowCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SectionStatChip(
-                    label = strings.totalAdvanceGiven,
-                    value = formatCurrency(item.totalAdvance, strings),
-                    color = ShepherdAdvancePurple,
-                    modifier = Modifier.weight(1f)
-                )
-                SectionStatChip(
                     label = strings.totalSalaryPaid,
                     value = formatCurrency(item.totalSalary, strings),
                     color = ShepherdSalaryIndigo,
                     modifier = Modifier.weight(1f)
                 )
                 SectionStatChip(
-                    label = strings.totalPaidToShepherd,
-                    value = formatCurrency(item.totalPaid, strings),
+                    label = strings.salaryPayableLabel,
+                    value = formatCurrency(item.salaryPayable, strings),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f)
+                )
+                SectionStatChip(
+                    label = strings.totalAdvanceGiven,
+                    value = formatCurrency(item.totalAdvance, strings),
+                    color = ShepherdAdvancePurple,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SectionStatChip(
+                    label = strings.advanceRecoveryLabel,
+                    value = formatCurrency(item.advanceRecovery, strings),
+                    color = LivestockSellGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                SectionStatChip(
+                    label = strings.outstandingAdvanceLabel,
+                    value = formatCurrency(item.outstandingAdvance, strings),
                     color = OwnerFundsGold,
                     modifier = Modifier.weight(1f)
                 )

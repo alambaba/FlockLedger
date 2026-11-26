@@ -181,4 +181,158 @@ class ExampleUnitTest {
             com.example.data.backup.BackupManager.normalizeUpdateUrl("https://example.com/version.json")
         )
     }
+
+    @Test
+    fun validationReportFigures_matchPdfAndDashboardAccounting() {
+        val farm = Farm(id = "val", name = "Laar Sheep Farm", initialFlockCount = 0L)
+        val entries = listOf(
+            LedgerEntry(id = "1", category = EntryCategory.OWNER_FUNDS.name, amount = 2_650_345.0, title = "Owner Funds"),
+            LedgerEntry(id = "2", category = EntryCategory.LIVESTOCK_SELL.name, amount = 45_000.0, livestockCount = 2L, title = "Sales"),
+            LedgerEntry(id = "3", category = EntryCategory.EXPENSE.name, amount = 608_287.0, title = "Farm Expenses"),
+            LedgerEntry(id = "4", category = EntryCategory.MEDICINE_VET.name, amount = 2_000.0, title = "Medicine & Vet"),
+            LedgerEntry(id = "5", category = EntryCategory.LIVESTOCK_BUY.name, amount = 1_870_400.0, livestockCount = 56L, title = "Livestock Purchases"),
+            LedgerEntry(id = "6", category = EntryCategory.SHEPHERD_SALARY.name, amount = 8_000.0, shepherdName = "Sajan", title = "Salaries"),
+            LedgerEntry(id = "7", category = EntryCategory.LOAN_GIVEN.name, amount = 206_658.0, shepherdName = "Party A", title = "Loan Given"),
+            LedgerEntry(id = "8", category = EntryCategory.LOAN_TAKEN.name, amount = 2_000.0, shepherdName = "Party B", title = "Loan Taken"),
+        )
+
+        val summary = computeFarmSummary(farm, entries)
+
+        assertEquals(2_650_345.0, summary.ownerFundsReceived, 0.01)
+        assertEquals(45_000.0, summary.livestockSalesRevenue, 0.01)
+        assertEquals(608_287.0, summary.generalExpenses, 0.01)
+        assertEquals(2_000.0, summary.medicineVetExpenses, 0.01)
+        assertEquals(1_870_400.0, summary.livestockBuyCost, 0.01)
+        assertEquals(8_000.0, summary.shepherdSalariesTotal, 0.01)
+        assertEquals(206_658.0, summary.loansGivenTotal, 0.01)
+        assertEquals(2_000.0, summary.loansTakenTotal, 0.01)
+
+        // Cash validation
+        assertEquals(2_697_345.0, summary.totalCashAvailable, 0.01)
+        assertEquals(2_695_345.0, summary.totalOutflows, 0.01)
+        assertEquals(2_000.0, summary.remainingCashBalance, 0.01)
+
+        // Livestock validation
+        assertEquals(0, summary.openingFlockCount)
+        assertEquals(56, summary.livestockBoughtCount)
+        assertEquals(2, summary.livestockSoldCount)
+        assertEquals(54, summary.currentFlockCount)
+        assertEquals(33_400.0, summary.avgPurchaseCostPerSheep, 0.01)
+        assertEquals(1_803_600.0, summary.livestockInventoryValue, 0.01)
+
+        // Accounting equation: Assets = Liabilities + Owner's Equity
+        assertEquals(summary.totalAssets, summary.totalLiabilities + summary.totalOwnerEquity, 0.01)
+    }
+
+    @Test
+    fun creditTransactionsDeathsAndAdvanceRecovery_calculateWithoutCashDistortion() {
+        val farm = Farm(id = "c1", name = "Laar Sheep Farm", initialFlockCount = 10L)
+        val entries = listOf(
+            LedgerEntry(id = "1", category = EntryCategory.OWNER_FUNDS.name, amount = 100_000.0, title = "Capital"),
+            LedgerEntry(id = "2", category = EntryCategory.LIVESTOCK_BUY.name, amount = 50_000.0, livestockCount = 5L, title = "Buy 5"),
+            // Credit feed expense should NOT reduce Cash, but creates Other Payables & Operating Expense
+            LedgerEntry(
+                id = "3",
+                category = EntryCategory.EXPENSE.name,
+                subCategory = com.example.data.model.ExpenseSubCategory.FEED.name,
+                paymentMethod = com.example.data.model.PaymentMethod.CREDIT.name,
+                amount = 10_000.0,
+                title = "Credit Feed"
+            ),
+            // Shepherd advance 8,000 then recovery 3,000 -> Outstanding Advance = 5,000, Cash -5,000 net
+            LedgerEntry(id = "4", category = EntryCategory.SHEPHERD_ADVANCE.name, amount = 8_000.0, shepherdName = "Ali", title = "Adv"),
+            LedgerEntry(id = "5", category = EntryCategory.SHEPHERD_ADVANCE_RECOVERY.name, amount = 3_000.0, shepherdName = "Ali", title = "Recov"),
+            // 1 sheep death -> Current flock = 10 + 5 - 1 = 14
+            LedgerEntry(id = "6", category = EntryCategory.LIVESTOCK_DEATH.name, amount = 0.0, livestockCount = 1L, title = "Death"),
+        )
+
+        val summary = computeFarmSummary(farm, entries)
+
+        assertEquals(14, summary.currentFlockCount)
+        assertEquals(1, summary.livestockDeathCount)
+        assertEquals(10_000.0, summary.otherPayablesBalance, 0.01)
+        assertEquals(5_000.0, summary.shepherdAdvancesOutstanding, 0.01)
+        // Cash = 100,000 + 3,000 - 50,000 - 8,000 = 45,000 (10k credit feed excluded from cash)
+        assertEquals(45_000.0, summary.remainingCashBalance, 0.01)
+        assertEquals(summary.totalAssets, summary.totalLiabilities + summary.totalOwnerEquity, 0.01)
+    }
+
+    @Test
+    fun monthlyBudgetTracking_calculatesCurrentMonthUsageAndAlerts() {
+        val cal = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.NOVEMBER, 15, 10, 0, 0)
+        }
+        val novMillis = cal.timeInMillis
+        val octMillis = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.OCTOBER, 20, 10, 0, 0)
+        }.timeInMillis
+
+        val entries = listOf(
+            // Current month Feed = 42,000 (84% of 50,000 -> APPROACHING at 80%)
+            LedgerEntry(
+                id = "f1",
+                category = EntryCategory.EXPENSE.name,
+                subCategory = com.example.data.model.ExpenseSubCategory.FEED.name,
+                amount = 42_000.0,
+                entryDateMillis = novMillis,
+                title = "Nov Feed"
+            ),
+            // Previous month Feed should be ignored for November budget
+            LedgerEntry(
+                id = "f_old",
+                category = EntryCategory.EXPENSE.name,
+                subCategory = com.example.data.model.ExpenseSubCategory.FEED.name,
+                amount = 30_000.0,
+                entryDateMillis = octMillis,
+                title = "Oct Feed"
+            ),
+            // Pending Feed should not count until approved
+            LedgerEntry(
+                id = "f_pending",
+                category = EntryCategory.EXPENSE.name,
+                subCategory = com.example.data.model.ExpenseSubCategory.FEED.name,
+                amount = 15_000.0,
+                entryDateMillis = novMillis,
+                approvalStatus = ApprovalStatus.PENDING.name,
+                title = "Pending Feed"
+            ),
+            // Current month Medicine & Vet + Treatment = 12,000 (120% of 10,000 -> EXCEEDED)
+            LedgerEntry(
+                id = "m1",
+                category = EntryCategory.MEDICINE_VET.name,
+                amount = 7_500.0,
+                entryDateMillis = novMillis,
+                title = "Vaccines"
+            ),
+            LedgerEntry(
+                id = "m2",
+                category = EntryCategory.EXPENSE.name,
+                subCategory = com.example.data.model.ExpenseSubCategory.TREATMENT.name,
+                amount = 4_500.0,
+                entryDateMillis = novMillis,
+                title = "Vet Treatment"
+            ),
+        )
+
+        val status = com.example.data.model.computeMonthlyBudgetStatus(
+            entries = entries,
+            feedCap = 50_000.0,
+            medVetCap = 10_000.0,
+            alertThresholdPercent = 80,
+            nowMillis = novMillis,
+        )
+
+        assertEquals(42_000.0, status.feedBudget.spentThisMonth, 0.01)
+        assertEquals(8_000.0, status.feedBudget.remainingAmount, 0.01)
+        assertEquals(84, status.feedBudget.percentUsed)
+        assertEquals(com.example.data.model.BudgetAlertLevel.APPROACHING, status.feedBudget.alertLevel)
+
+        assertEquals(12_000.0, status.medVetBudget.spentThisMonth, 0.01)
+        assertEquals(2_000.0, status.medVetBudget.overAmount, 0.01)
+        assertEquals(120, status.medVetBudget.percentUsed)
+        assertEquals(com.example.data.model.BudgetAlertLevel.EXCEEDED, status.medVetBudget.alertLevel)
+        org.junit.Assert.assertTrue(status.hasAnyAlert)
+    }
 }
+
+

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,6 +35,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -443,3 +447,141 @@ fun FarmSettingsDialog(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MonthlyBudgetDialog(
+    prefs: UserPreferences,
+    strings: AppStrings,
+    onDismiss: () -> Unit,
+    onSaveBudgets: (feedCap: Double, medVetCap: Double, alertThresholdPercent: Int) -> Unit,
+) {
+    var feedCapText by remember(prefs.monthlyFeedBudgetCap) {
+        mutableStateOf(
+            if (prefs.monthlyFeedBudgetCap > 0.0) {
+                prefs.monthlyFeedBudgetCap.toLong().toString()
+            } else ""
+        )
+    }
+    var medVetCapText by remember(prefs.monthlyMedVetBudgetCap) {
+        mutableStateOf(
+            if (prefs.monthlyMedVetBudgetCap > 0.0) {
+                prefs.monthlyMedVetBudgetCap.toLong().toString()
+            } else ""
+        )
+    }
+    var alertThreshold by remember(prefs.budgetAlertThresholdPercent) {
+        mutableStateOf(prefs.budgetAlertThresholdPercent)
+    }
+    val thresholdOptions = listOf(75, 80, 90)
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .widthIn(max = 520.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = strings.monthlyBudgetsTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Rounded.Close, contentDescription = strings.cancel)
+                    }
+                }
+
+                Text(
+                    text = strings.budgetCapHelperText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = feedCapText,
+                    onValueChange = { raw ->
+                        if (raw.all { it.isDigit() || it == '.' }) feedCapText = raw
+                    },
+                    label = { Text(strings.feedMonthlyCapLabel) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("feed_budget_cap_input")
+                )
+
+                OutlinedTextField(
+                    value = medVetCapText,
+                    onValueChange = { raw ->
+                        if (raw.all { it.isDigit() || it == '.' }) medVetCapText = raw
+                    },
+                    label = { Text(strings.medVetMonthlyCapLabel) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("med_vet_budget_cap_input")
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = strings.alertThresholdLabel,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        thresholdOptions.forEachIndexed { idx, pct ->
+                            SegmentedButton(
+                                selected = alertThreshold == pct,
+                                onClick = { alertThreshold = pct },
+                                shape = SegmentedButtonDefaults.itemShape(idx, thresholdOptions.size),
+                                modifier = Modifier.testTag("budget_threshold_$pct")
+                            ) {
+                                Text("$pct%")
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text(strings.cancel)
+                    }
+                    Spacer(Modifier.size(8.dp))
+                    Button(
+                        onClick = {
+                            val feedCap = feedCapText.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                            val medCap = medVetCapText.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                            onSaveBudgets(feedCap, medCap, alertThreshold)
+                            onDismiss()
+                        },
+                        modifier = Modifier.testTag("save_monthly_budgets_button")
+                    ) {
+                        Text(strings.saveEntry)
+                    }
+                }
+            }
+        }
+    }
+}
+

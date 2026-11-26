@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -161,6 +162,7 @@ fun FlockDrawerSheetContent(
     onToggleDarkMode: () -> Unit,
     onDownloadPdf: () -> Unit,
     onOpenBackupSettings: () -> Unit,
+    onOpenMonthlyBudgets: () -> Unit,
     onOpenFarmSettings: () -> Unit,
     onOpenStorageInfo: () -> Unit,
 ) {
@@ -298,6 +300,14 @@ fun FlockDrawerSheetContent(
                     selected = false,
                     onClick = onOpenBackupSettings,
                     modifier = Modifier.testTag("drawer_backup_button")
+                )
+
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Rounded.Tune, contentDescription = strings.monthlyBudgetsMenu) },
+                    label = { Text(strings.monthlyBudgetsMenu) },
+                    selected = false,
+                    onClick = onOpenMonthlyBudgets,
+                    modifier = Modifier.testTag("drawer_monthly_budgets_button")
                 )
 
                 NavigationDrawerItem(

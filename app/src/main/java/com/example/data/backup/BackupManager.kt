@@ -13,6 +13,7 @@ import com.example.data.model.EntryCategory
 import com.example.data.model.Farm
 import com.example.data.model.FarmSummary
 import com.example.data.model.LedgerEntry
+import com.example.data.model.PaymentMethod
 import com.example.data.preferences.UserPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -113,7 +114,7 @@ class BackupManager(private val context: Context) {
         val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
 
         val sb = StringBuilder()
-        sb.appendLine("ID,Date,Category,Sub_Category,Title,Amount_PKR,Sheep_Count,Shepherd,Note,Logged_By,Has_Receipt")
+        sb.appendLine("ID,Date,Category,Sub_Category,Title,Amount_PKR,Sheep_Count,Shepherd,Note,Payment_Method,Logged_By,Has_Receipt")
         entries.forEach { e ->
             sb.appendLine(
                 listOf(
@@ -126,6 +127,7 @@ class BackupManager(private val context: Context) {
                     e.livestockCount.toString(),
                     csvEscape(e.shepherdName),
                     csvEscape(e.note),
+                    e.paymentMethod,
                     csvEscape(e.createdByName),
                     if (!e.receiptBase64.isNullOrBlank()) "YES" else "NO"
                 ).joinToString(",")
@@ -257,6 +259,7 @@ class BackupManager(private val context: Context) {
                     put("livestockCount", entry.livestockCount)
                     put("shepherdName", entry.shepherdName)
                     put("note", entry.note)
+                    put("paymentMethod", entry.paymentMethod)
                     put("loggedBy", entry.createdByName)
                     put("hasReceipt", !entry.receiptBase64.isNullOrBlank())
                 }
@@ -474,6 +477,7 @@ class BackupManager(private val context: Context) {
                         put("createdAtMillis", entry.createdAtMillis)
                         put("updatedAtMillis", entry.updatedAtMillis)
                         put("approvalStatus", entry.approvalStatus)
+                        put("paymentMethod", entry.paymentMethod)
                     }
                 )
             }
@@ -532,11 +536,12 @@ class BackupManager(private val context: Context) {
                 if (entriesArr != null) {
                     for (i in 0 until entriesArr.length()) {
                         val obj = entriesArr.optJSONObject(i) ?: continue
-                        val amount = obj.optDouble("amount", 0.0)
-                        if (amount.isNaN() || amount <= 0.0) continue
-                        val title = obj.optString("title").trim().ifEmpty { "Entry" }
                         val cat = EntryCategory.fromRaw(obj.optString("category")).name
+                        val amount = obj.optDouble("amount", 0.0)
+                        if (amount.isNaN() || amount < 0.0 || (amount == 0.0 && cat != EntryCategory.LIVESTOCK_DEATH.name)) continue
+                        val title = obj.optString("title").trim().ifEmpty { "Entry" }
                         val status = ApprovalStatus.fromRaw(obj.optString("approvalStatus", ApprovalStatus.APPROVED.name)).name
+                        val method = PaymentMethod.fromRaw(obj.optString("paymentMethod", PaymentMethod.CASH.name)).name
                         val receipt = obj.optString("receiptBase64", "").ifBlank { null }
                         val entryDate = obj.optLong("entryDateMillis", now)
                         entries.add(
@@ -558,6 +563,7 @@ class BackupManager(private val context: Context) {
                                 createdAtMillis = obj.optLong("createdAtMillis", entryDate),
                                 updatedAtMillis = obj.optLong("updatedAtMillis", now),
                                 approvalStatus = status,
+                                paymentMethod = method,
                             )
                         )
                     }
@@ -646,9 +652,9 @@ class BackupManager(private val context: Context) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("FlockLedger") || ss.insertSheet("FlockLedger");
   sheet.clear();
-  sheet.appendRow(["Date", "Category", "SubCategory", "Title", "Amount (PKR)", "Sheep Count", "Shepherd", "Note", "Logged By"]);
+  sheet.appendRow(["Date", "Category", "SubCategory", "Title", "Amount (PKR)", "Sheep Count", "Shepherd", "Note", "Payment Method", "Logged By"]);
   data.entries.forEach(function(row) {
-    sheet.appendRow([row.date, row.category, row.subCategory || "", row.title, row.amount, row.livestockCount, row.shepherdName, row.note, row.loggedBy]);
+    sheet.appendRow([row.date, row.category, row.subCategory || "", row.title, row.amount, row.livestockCount, row.shepherdName, row.note, row.paymentMethod || "CASH", row.loggedBy]);
   });
   return ContentService.createTextOutput(JSON.stringify({status: "ok", rows: data.entries.length}))
     .setMimeType(ContentService.MimeType.JSON);

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -41,6 +42,9 @@ data class UserPreferences(
     val lastSeenVersionCode: Long = 0L,
     val lastSeenVersionName: String = "",
     val updateSourceRepo: String = "",
+    val monthlyFeedBudgetCap: Double = 0.0,
+    val monthlyMedVetBudgetCap: Double = 0.0,
+    val budgetAlertThresholdPercent: Int = 80,
 ) {
     val pinsConfigured: Boolean
         get() = adminPinHash.isNotEmpty() && caretakerPinHash.isNotEmpty()
@@ -67,6 +71,9 @@ class AppPreferencesRepository(private val context: Context) {
         val LAST_SEEN_VERSION_CODE = longPreferencesKey("last_seen_version_code")
         val LAST_SEEN_VERSION_NAME = stringPreferencesKey("last_seen_version_name")
         val UPDATE_SOURCE_REPO = stringPreferencesKey("update_source_repo")
+        val MONTHLY_FEED_BUDGET_CAP = doublePreferencesKey("monthly_feed_budget_cap")
+        val MONTHLY_MED_VET_BUDGET_CAP = doublePreferencesKey("monthly_med_vet_budget_cap")
+        val BUDGET_ALERT_THRESHOLD_PERCENT = intPreferencesKey("budget_alert_threshold_percent")
     }
 
     val preferencesFlow: Flow<UserPreferences> = context.appDataStore.data.map { prefs ->
@@ -90,6 +97,9 @@ class AppPreferencesRepository(private val context: Context) {
             lastSeenVersionCode = prefs[Keys.LAST_SEEN_VERSION_CODE] ?: 0L,
             lastSeenVersionName = prefs[Keys.LAST_SEEN_VERSION_NAME] ?: "",
             updateSourceRepo = prefs[Keys.UPDATE_SOURCE_REPO] ?: "",
+            monthlyFeedBudgetCap = prefs[Keys.MONTHLY_FEED_BUDGET_CAP] ?: 0.0,
+            monthlyMedVetBudgetCap = prefs[Keys.MONTHLY_MED_VET_BUDGET_CAP] ?: 0.0,
+            budgetAlertThresholdPercent = prefs[Keys.BUDGET_ALERT_THRESHOLD_PERCENT] ?: 80,
         )
     }
 
@@ -167,6 +177,18 @@ class AppPreferencesRepository(private val context: Context) {
     suspend fun saveUpdateSource(repoOrUrl: String) {
         context.appDataStore.edit { prefs ->
             prefs[Keys.UPDATE_SOURCE_REPO] = repoOrUrl.trim()
+        }
+    }
+
+    suspend fun saveMonthlyBudgets(
+        feedCap: Double,
+        medVetCap: Double,
+        alertThresholdPercent: Int = 80,
+    ) {
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.MONTHLY_FEED_BUDGET_CAP] = feedCap.coerceAtLeast(0.0)
+            prefs[Keys.MONTHLY_MED_VET_BUDGET_CAP] = medVetCap.coerceAtLeast(0.0)
+            prefs[Keys.BUDGET_ALERT_THRESHOLD_PERCENT] = alertThresholdPercent.coerceIn(50, 99)
         }
     }
 

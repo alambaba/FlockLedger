@@ -67,8 +67,11 @@ import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.Farm
 import com.example.data.model.FarmSummary
 import com.example.data.model.LedgerEntry
+import com.example.data.model.MonthlyBudgetStatus
 import com.example.i18n.AppStrings
 import com.example.ui.components.LedgerEntryCard
+import com.example.ui.components.MonthlyBudgetAlertBanner
+import com.example.ui.components.MonthlyBudgetTrackerCard
 import com.example.ui.components.formatCurrency
 import com.example.ui.components.subCategoryLabel
 import com.example.ui.theme.ExpenseRed
@@ -87,6 +90,7 @@ fun FundflowScreen(
     farm: Farm,
     entries: List<LedgerEntry>,
     summary: FarmSummary,
+    budgetStatus: MonthlyBudgetStatus,
     entriesSinceBackup: Int,
     isAdminView: Boolean,
     strings: AppStrings,
@@ -100,6 +104,7 @@ fun FundflowScreen(
     onViewReceipt: (LedgerEntry) -> Unit,
     onDownloadPdf: () -> Unit,
     onOpenBackupSettings: () -> Unit,
+    onOpenMonthlyBudgets: () -> Unit,
     onOpenLoansPage: () -> Unit,
     onSaveSafetyBackupFile: () -> Unit,
     onRestoreBackupFile: () -> Unit,
@@ -110,6 +115,7 @@ fun FundflowScreen(
         CaretakerRestrictedDashboard(
             farmName = farm.name,
             entries = entries,
+            budgetStatus = budgetStatus,
             strings = strings,
             postUpdateBanner = postUpdateBanner,
             availableUpdate = availableUpdate,
@@ -151,6 +157,17 @@ fun FundflowScreen(
                     strings = strings,
                     onSaveBackupClick = onSaveSafetyBackupFile,
                     onDismiss = onDismissPostUpdateBanner,
+                    modifier = Modifier.widthIn(max = 640.dp)
+                )
+            }
+        }
+
+        if (budgetStatus.hasAnyAlert) {
+            item {
+                MonthlyBudgetAlertBanner(
+                    status = budgetStatus,
+                    strings = strings,
+                    onEditBudgets = onOpenMonthlyBudgets,
                     modifier = Modifier.widthIn(max = 640.dp)
                 )
             }
@@ -219,7 +236,7 @@ fun FundflowScreen(
 
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                text = strings.remainingBalance,
+                                text = strings.kpiCashInHand,
                                 fontSize = 13.sp,
                                 lineHeight = 18.sp,
                                 color = Color.White.copy(alpha = 0.88f)
@@ -239,13 +256,13 @@ fun FundflowScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             HeroMetricCard(
-                                label = strings.ownerFundsReceived,
+                                label = strings.kpiOwnerCapital,
                                 value = formatCurrency(summary.ownerFundsReceived, strings),
                                 modifier = Modifier.weight(1f)
                             )
                             HeroMetricCard(
-                                label = strings.totalSpent,
-                                value = formatCurrency(summary.totalOutflows, strings),
+                                label = strings.kpiTotalSales,
+                                value = formatCurrency(summary.livestockSalesRevenue, strings),
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -254,17 +271,14 @@ fun FundflowScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             HeroMetricCard(
-                                label = strings.livestockSales,
-                                value = formatCurrency(summary.livestockSalesRevenue, strings),
+                                label = strings.kpiLivestockInvestment,
+                                value = formatCurrency(summary.livestockBuyCost, strings),
                                 modifier = Modifier.weight(1f)
                             )
                             HeroMetricCard(
-                                label = strings.navLoans,
-                                value = formatCurrency(summary.loansPayableBalance, strings),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable(onClick = onOpenLoansPage)
+                                label = strings.kpiNetAssets,
+                                value = formatCurrency(summary.netAssets, strings),
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -385,6 +399,81 @@ fun FundflowScreen(
             }
         }
 
+        // 10-KPI Dashboard Overview matching PDF & Ledger
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 640.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DashboardKpiTile(strings.kpiOperatingExpenses, formatCurrency(summary.totalOperatingExpenses, strings), ExpenseRed, Modifier.weight(1f))
+                        DashboardKpiTile(strings.kpiCashInHand, formatCurrency(summary.remainingCashBalance, strings), LivestockSellGreen, Modifier.weight(1f))
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DashboardKpiTile(strings.kpiLoansGiven, formatCurrency(summary.loansGivenTotal, strings), LivestockBuyTeal, Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onOpenLoansPage))
+                        DashboardKpiTile(strings.kpiLoansTaken, formatCurrency(summary.loansTakenTotal, strings), LoanTakenAmber, Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onOpenLoansPage))
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DashboardKpiTile(strings.kpiCurrentFlock, "${summary.currentFlockCount} ${strings.sheepUnit}", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                        DashboardKpiTile(strings.kpiInventoryValue, formatCurrency(summary.livestockInventoryValue, strings), LivestockBuyTeal, Modifier.weight(1f))
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DashboardKpiTile(strings.totalCashAvailableLabel, formatCurrency(summary.totalCashAvailable, strings), LivestockSellGreen, Modifier.weight(1f))
+                        DashboardKpiTile(strings.totalSpent, formatCurrency(summary.totalOutflows, strings), ExpenseRed, Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        // Balance Sheet Summary (Assets = Liabilities + Owner's Equity)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 640.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = strings.balanceSheetHeading,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    BalanceSheetRow(strings.totalAssetsLabel, formatCurrency(summary.totalAssets, strings), LivestockSellGreen, bold = true)
+                    BalanceSheetRow(strings.totalLiabilitiesLabel, formatCurrency(summary.totalLiabilities, strings), LoanTakenAmber)
+                    BalanceSheetRow(strings.totalOwnerEquityLabel, formatCurrency(summary.totalOwnerEquity, strings), MaterialTheme.colorScheme.primary)
+                    BalanceSheetRow(
+                        strings.retainedProfitLossLabel,
+                        formatCurrency(summary.retainedProfitLoss, strings),
+                        if (summary.retainedProfitLoss >= 0) LivestockSellGreen else ExpenseRed
+                    )
+                }
+            }
+        }
+
+        // Monthly Budget Tracker for Feed & Medicine/Vet
+        item {
+            MonthlyBudgetTrackerCard(
+                status = budgetStatus,
+                strings = strings,
+                canEdit = true,
+                onEditBudgets = onOpenMonthlyBudgets,
+                modifier = Modifier.widthIn(max = 640.dp)
+            )
+        }
+
         // Category Flow Breakdown
         item {
             Card(
@@ -399,15 +488,15 @@ fun FundflowScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     val maxVal = maxOf(
-                        summary.generalExpenses,
+                        summary.operatingFarmExpenses,
                         summary.medicineVetExpenses,
                         summary.livestockBuyCost,
                         summary.shepherdAdvancesTotal,
                         summary.shepherdSalariesTotal,
-                        summary.loansTakenTotal,
+                        summary.loansGivenTotal,
                         1.0
                     )
-                    SectionBreakdownBar(strings.generalExpenses, summary.generalExpenses, maxVal, ExpenseRed, strings)
+                    SectionBreakdownBar(strings.generalExpenses, summary.operatingFarmExpenses, maxVal, ExpenseRed, strings)
                     val nonZeroSubs = ExpenseSubCategory.entries.filter {
                         (summary.farmExpenseSubTotals[it] ?: 0.0) > 0.0
                     }
@@ -497,6 +586,7 @@ fun FundflowScreen(
 private fun CaretakerRestrictedDashboard(
     farmName: String,
     entries: List<LedgerEntry>,
+    budgetStatus: MonthlyBudgetStatus,
     strings: AppStrings,
     postUpdateBanner: PostUpdateBanner?,
     availableUpdate: AvailableAppUpdate?,
@@ -530,6 +620,16 @@ private fun CaretakerRestrictedDashboard(
                     strings = strings,
                     onSaveBackupClick = onSaveSafetyBackupFile,
                     onDismiss = onDismissPostUpdateBanner,
+                    modifier = Modifier.widthIn(max = 620.dp)
+                )
+            }
+        }
+        if (budgetStatus.hasAnyAlert) {
+            item {
+                MonthlyBudgetAlertBanner(
+                    status = budgetStatus,
+                    strings = strings,
+                    onEditBudgets = {},
                     modifier = Modifier.widthIn(max = 620.dp)
                 )
             }
@@ -731,6 +831,67 @@ private fun HeroMetricCard(label: String, value: String, modifier: Modifier = Mo
                 fontWeight = FontWeight.Bold
             )
         }
+    }
+}
+
+@Composable
+private fun DashboardKpiTile(
+    label: String,
+    value: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = accent.copy(alpha = 0.10f)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                color = accent,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = value,
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun BalanceSheetRow(
+    label: String,
+    value: String,
+    color: Color,
+    bold: Boolean = false,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = value,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
     }
 }
 

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -38,7 +39,9 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
@@ -66,6 +69,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.data.model.BudgetAlertLevel
 import com.example.data.model.EntryCategory
 import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.LedgerEntry
@@ -76,6 +80,7 @@ import com.example.i18n.englishStrings
 import com.example.i18n.sindhiStrings
 import com.example.ui.components.EntryEditorDialog
 import com.example.ui.components.ReceiptViewerDialog
+import com.example.ui.components.formatCurrency
 import com.example.ui.theme.FlockLedgerTheme
 import com.example.ui.viewmodel.AppEvent
 import com.example.ui.viewmodel.FlockViewModel
@@ -209,6 +214,9 @@ private fun MainWorkspace(
     var showFarmDialog by remember { mutableStateOf(false) }
     var showChangePinsDialog by remember { mutableStateOf(false) }
     var showStorageInfoDialog by remember { mutableStateOf(false) }
+    var showPdfOptionsDialog by remember { mutableStateOf(false) }
+    var includePendingInPdf by remember { mutableStateOf(false) }
+    var showMonthlyBudgetDialog by remember { mutableStateOf(false) }
 
     val navigateToRoute: (String) -> Unit = { route ->
         if (currentRoute != route) {
@@ -260,6 +268,26 @@ private fun MainWorkspace(
                     val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(event.url))
                     context.startActivity(viewIntent)
                 }
+                is AppEvent.BudgetThresholdAlert -> {
+                    val catName = if (event.isFeed) strings.subFeed else strings.medicineAndVet
+                    val msg = if (event.alertLevel == BudgetAlertLevel.EXCEEDED) {
+                        String.format(
+                            strings.budgetExceededAlertMsg,
+                            catName,
+                            formatCurrency(event.spentAmount, strings)
+                        )
+                    } else {
+                        String.format(
+                            strings.budgetApproachingAlertMsg,
+                            catName,
+                            event.percentUsed
+                        )
+                    }
+                    snackbarHostState.showSnackbar(
+                        message = msg,
+                        duration = SnackbarDuration.Long
+                    )
+                }
             }
         }
     }
@@ -297,11 +325,15 @@ private fun MainWorkspace(
                 onToggleDarkMode = { viewModel.toggleDarkMode() },
                 onDownloadPdf = {
                     scope.launch { drawerState.close() }
-                    viewModel.generatePdfReport()
+                    showPdfOptionsDialog = true
                 },
                 onOpenBackupSettings = {
                     scope.launch { drawerState.close() }
                     showBackupDialog = true
+                },
+                onOpenMonthlyBudgets = {
+                    scope.launch { drawerState.close() }
+                    showMonthlyBudgetDialog = true
                 },
                 onOpenFarmSettings = {
                     scope.launch { drawerState.close() }
@@ -522,6 +554,7 @@ private fun MainWorkspace(
                                                 farm = farm,
                                                 entries = state.data.entries,
                                                 summary = state.data.summary,
+                                                budgetStatus = state.data.budgetStatus,
                                                 entriesSinceBackup = prefs.entriesSinceBackup,
                                                 isAdminView = isAdminView,
                                                 strings = strings,
@@ -533,8 +566,9 @@ private fun MainWorkspace(
                                                 onApproveEntry = approveEntry,
                                                 onRejectEntry = rejectEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it },
-                                                onDownloadPdf = { viewModel.generatePdfReport() },
+                                                onDownloadPdf = { showPdfOptionsDialog = true },
                                                 onOpenBackupSettings = { showBackupDialog = true },
+                                                onOpenMonthlyBudgets = { showMonthlyBudgetDialog = true },
                                                 onOpenLoansPage = { navigateToRoute(ROUTE_LOANS) },
                                                 onSaveSafetyBackupFile = {
                                                     viewModel.saveSafetyBackupToDownloadsNow(strings.autoSafetyBackupSavedMsg)
@@ -591,9 +625,11 @@ private fun MainWorkspace(
                                             MedicalScreen(
                                                 entries = state.data.entries,
                                                 summary = state.data.summary,
+                                                budgetStatus = state.data.budgetStatus,
                                                 isAdminView = isAdminView,
                                                 strings = strings,
                                                 onAddMedical = { openEditorForCategory(EntryCategory.MEDICINE_VET, "") },
+                                                onOpenMonthlyBudgets = { showMonthlyBudgetDialog = true },
                                                 onEditEntry = openEditorForEntry,
                                                 onApproveEntry = approveEntry,
                                                 onRejectEntry = rejectEntry,
@@ -631,7 +667,7 @@ private fun MainWorkspace(
             shepherds = successData.activeFarm.shepherds,
             prefilledShepherd = prefilledShepherdOrParty,
             onDismiss = { showEditorDialog = false },
-            onSave = { cat, subCat, title, amount, sheepCount, shepherd, note, receiptB64, dateMillis ->
+            onSave = { cat, subCat, title, amount, sheepCount, shepherd, note, receiptB64, dateMillis, payMethod ->
                 viewModel.saveEntry(
                     editingEntry = editingEntry,
                     category = cat,
@@ -643,6 +679,7 @@ private fun MainWorkspace(
                     note = note,
                     receiptBase64 = receiptB64,
                     entryDateMillis = dateMillis,
+                    paymentMethod = payMethod,
                     savedMessage = strings.entrySavedMessage,
                     pendingMessage = strings.entryPendingMsg,
                     autoBackupMessage = strings.autoBackupTriggeredMsg,
@@ -725,6 +762,60 @@ private fun MainWorkspace(
                 restoreBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
             },
             onDismiss = { showStorageInfoDialog = false }
+        )
+    }
+
+    if (showPdfOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showPdfOptionsDialog = false },
+            title = { Text(strings.downloadPdfReport, fontWeight = FontWeight.Bold) },
+            text = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = strings.includePendingPdfLabel,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 12.dp)
+                    )
+                    Switch(
+                        checked = includePendingInPdf,
+                        onCheckedChange = { includePendingInPdf = it }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showPdfOptionsDialog = false
+                    viewModel.generatePdfReport(includePending = includePendingInPdf)
+                }) {
+                    Text(strings.generatePdfAction)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPdfOptionsDialog = false }) {
+                    Text(strings.cancel)
+                }
+            }
+        )
+    }
+
+    if (showMonthlyBudgetDialog && isAdminView) {
+        MonthlyBudgetDialog(
+            prefs = prefs,
+            strings = strings,
+            onDismiss = { showMonthlyBudgetDialog = false },
+            onSaveBudgets = { feedCap, medCap, thresholdPct ->
+                viewModel.saveMonthlyBudgets(
+                    feedCap = feedCap,
+                    medVetCap = medCap,
+                    alertThresholdPercent = thresholdPct,
+                    savedMessage = strings.budgetSavedMsg,
+                )
+            }
         )
     }
 }

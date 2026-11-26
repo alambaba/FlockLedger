@@ -55,6 +55,7 @@ import com.example.data.model.ApprovalStatus
 import com.example.data.model.EntryCategory
 import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.LedgerEntry
+import com.example.data.model.PaymentMethod
 import com.example.i18n.AppStrings
 import com.example.ui.theme.LivestockSellGreen
 import com.example.ui.theme.PendingAmber
@@ -76,8 +77,11 @@ fun categoryIcon(category: EntryCategory): ImageVector = when (category) {
     EntryCategory.EXPENSE -> Icons.AutoMirrored.Rounded.ReceiptLong
     EntryCategory.MEDICINE_VET -> Icons.Rounded.MedicalServices
     EntryCategory.LIVESTOCK_BUY -> Icons.Rounded.ShoppingCart
-    EntryCategory.LIVESTOCK_SELL -> Icons.Rounded.Sell
-    EntryCategory.SHEPHERD_ADVANCE -> Icons.Rounded.Payments
+    EntryCategory.LIVESTOCK_SELL,
+    EntryCategory.OTHER_INCOME -> Icons.Rounded.Sell
+    EntryCategory.LIVESTOCK_DEATH -> Icons.Rounded.Pets
+    EntryCategory.SHEPHERD_ADVANCE,
+    EntryCategory.SHEPHERD_ADVANCE_RECOVERY -> Icons.Rounded.Payments
     EntryCategory.SHEPHERD_SALARY -> Icons.Rounded.AccountBalanceWallet
     EntryCategory.OWNER_FUNDS -> Icons.Rounded.Pets
     EntryCategory.LOAN_TAKEN,
@@ -100,11 +104,14 @@ fun LedgerEntryCard(
 ) {
     val cat = entry.parsedCategory()
     val status = entry.parsedApprovalStatus()
+    val paymentMethod = entry.parsedPaymentMethod()
     val accent = categoryColor(cat)
     val isInflow = cat == EntryCategory.OWNER_FUNDS ||
         cat == EntryCategory.LIVESTOCK_SELL ||
+        cat == EntryCategory.OTHER_INCOME ||
         cat == EntryCategory.LOAN_TAKEN ||
-        cat == EntryCategory.LOAN_RECOVER
+        cat == EntryCategory.LOAN_RECOVER ||
+        cat == EntryCategory.SHEPHERD_ADVANCE_RECOVERY
 
     val dateStr = remember(entry.entryDateMillis) {
         SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date(entry.entryDateMillis))
@@ -181,6 +188,20 @@ fun LedgerEntryCard(
                                 )
                             }
                         }
+                        if (paymentMethod == PaymentMethod.CREDIT && cat != EntryCategory.LIVESTOCK_DEATH) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer
+                            ) {
+                                Text(
+                                    text = strings.methodCredit,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                         if (status == ApprovalStatus.PENDING) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
@@ -244,8 +265,13 @@ fun LedgerEntryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val amountDisplay = if (cat == EntryCategory.LIVESTOCK_DEATH && entry.amount == 0.0) {
+                    "- ${entry.livestockCount} ${strings.sheepUnit}"
+                } else {
+                    (if (isInflow) "+ " else "- ") + formatCurrency(entry.amount, strings)
+                }
                 Text(
-                    text = (if (isInflow) "+ " else "- ") + formatCurrency(entry.amount, strings),
+                    text = amountDisplay,
                     fontSize = 15.sp,
                     lineHeight = 20.sp,
                     fontWeight = FontWeight.Bold,

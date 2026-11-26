@@ -17,6 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.ApprovalStatus
 import com.example.data.model.Farm
 import com.example.data.model.LedgerEntry
+import com.example.data.model.PaymentMethod
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
 
@@ -89,6 +90,7 @@ data class LedgerEntryEntity(
     val updatedAtMillis: Long,
     val approvalStatus: String = ApprovalStatus.APPROVED.name,
     val subCategory: String = "",
+    val paymentMethod: String = PaymentMethod.CASH.name,
 ) {
     fun toDomain(): LedgerEntry = LedgerEntry(
         id = id,
@@ -106,6 +108,7 @@ data class LedgerEntryEntity(
         createdAtMillis = createdAtMillis,
         updatedAtMillis = updatedAtMillis,
         approvalStatus = approvalStatus,
+        paymentMethod = paymentMethod,
     )
 }
 
@@ -164,7 +167,7 @@ interface LedgerEntryDao {
 
 @Database(
     entities = [FarmEntity::class, LedgerEntryEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class FlockDatabase : RoomDatabase() {
@@ -191,6 +194,14 @@ abstract class FlockDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ledger_entries ADD COLUMN paymentMethod TEXT NOT NULL DEFAULT 'CASH'"
+                )
+            }
+        }
+
         fun getInstance(context: Context): FlockDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -198,7 +209,7 @@ abstract class FlockDatabase : RoomDatabase() {
                     FlockDatabase::class.java,
                     "flock_ledger.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

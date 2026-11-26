@@ -10,11 +10,16 @@ import com.example.data.backup.AvailableAppUpdate
 import com.example.data.backup.BackupExecutionResult
 import com.example.data.backup.BackupManager
 import com.example.data.model.ApprovalStatus
+import com.example.data.model.BudgetAlertLevel
 import com.example.data.model.EntryCategory
+import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.Farm
 import com.example.data.model.FarmSummary
 import com.example.data.model.LedgerEntry
+import com.example.data.model.MonthlyBudgetStatus
+import com.example.data.model.PaymentMethod
 import com.example.data.model.computeFarmSummary
+import com.example.data.model.computeMonthlyBudgetStatus
 import com.example.data.pdf.GeneratedPdfResult
 import com.example.data.pdf.PdfReportGenerator
 import com.example.data.preferences.AppPreferencesRepository
@@ -52,6 +57,12 @@ sealed interface AppEvent {
     data class CsvReady(val uri: Uri) : AppEvent
     data class AutoBackupCompleted(val result: BackupExecutionResult) : AppEvent
     data class OpenUpdateUrl(val url: String) : AppEvent
+    data class BudgetThresholdAlert(
+        val isFeed: Boolean,
+        val alertLevel: BudgetAlertLevel,
+        val percentUsed: Int,
+        val spentAmount: Double,
+    ) : AppEvent
 }
 
 data class PostUpdateBanner(
@@ -64,6 +75,7 @@ data class DashboardData(
     val activeFarm: Farm?,
     val entries: List<LedgerEntry>,
     val summary: FarmSummary,
+    val budgetStatus: MonthlyBudgetStatus,
 )
 
 class FlockViewModel(
@@ -127,6 +139,12 @@ class FlockViewModel(
                                         activeFarm = null,
                                         entries = emptyList(),
                                         summary = computeFarmSummary(null, emptyList()),
+                                        budgetStatus = computeMonthlyBudgetStatus(
+                                            entries = emptyList(),
+                                            feedCap = prefs.monthlyFeedBudgetCap,
+                                            medVetCap = prefs.monthlyMedVetBudgetCap,
+                                            alertThresholdPercent = prefs.budgetAlertThresholdPercent,
+                                        ),
                                     )
                                 )
                             )
@@ -139,6 +157,12 @@ class FlockViewModel(
                                             activeFarm = activeFarm,
                                             entries = entries,
                                             summary = computeFarmSummary(activeFarm, entries),
+                                            budgetStatus = computeMonthlyBudgetStatus(
+                                                entries = entries,
+                                                feedCap = prefs.monthlyFeedBudgetCap,
+                                                medVetCap = prefs.monthlyMedVetBudgetCap,
+                                                alertThresholdPercent = prefs.budgetAlertThresholdPercent,
+                                            ),
                                         )
                                     )
                                 }
@@ -270,6 +294,7 @@ class FlockViewModel(
         note: String,
         receiptBase64: String?,
         entryDateMillis: Long,
+        paymentMethod: PaymentMethod = PaymentMethod.CASH,
         savedMessage: String,
         pendingMessage: String,
         autoBackupMessage: String,
@@ -309,6 +334,7 @@ class FlockViewModel(
                     receiptBase64 = receiptBase64,
                     entryDateMillis = entryDateMillis,
                     approvalStatus = status,
+                    paymentMethod = paymentMethod,
                 )
             } else {
                 repository.updateEntry(
@@ -323,6 +349,7 @@ class FlockViewModel(
                     note = note,
                     receiptBase64 = receiptBase64,
                     entryDateMillis = entryDateMillis,
+                    paymentMethod = paymentMethod,
                 )
             }
             _isBusy.value = false
@@ -330,6 +357,9 @@ class FlockViewModel(
             result.onSuccess {
                 refreshSafetyMirrorInternal()
                 _events.tryEmit(AppEvent.ShowMessage(if (status == ApprovalStatus.PENDING) pendingMessage else savedMessage))
+                if (status == ApprovalStatus.APPROVED) {
+                    emitBudgetAlertIfCrossed(farm.id, category, subCategory)
+                }
                 if (editingEntry == null && status == ApprovalStatus.APPROVED) {
                     val count = prefsRepository.incrementEntryCounter()
                     if (count >= 5) {
@@ -345,6 +375,8 @@ class FlockViewModel(
 
     fun approveEntry(entryId: String, approvedMsg: String, autoBackupMessage: String) {
         if (_activeRole.value != UserRole.ADMIN) return
+        val currentData = (dashboardState.value as? UiState.Success)?.data
+        val targetEntry = currentData?.entries?.firstOrNull { it.id == entryId }
         viewModelScope.launch {
             _isBusy.value = true
             val res = repository.setApprovalStatus(entryId, ApprovalStatus.APPROVED)
@@ -352,6 +384,13 @@ class FlockViewModel(
             res.onSuccess {
                 refreshSafetyMirrorInternal()
                 _events.tryEmit(AppEvent.ShowMessage(approvedMsg))
+                if (targetEntry != null) {
+                    emitBudgetAlertIfCrossed(
+                        farmId = targetEntry.farmId,
+                        category = targetEntry.parsedCategory(),
+                        subCategory = targetEntry.subCategory,
+                    )
+                }
                 val count = prefsRepository.incrementEntryCounter()
                 if (count >= 5) {
                     _events.tryEmit(AppEvent.ShowMessage(autoBackupMessage))
@@ -360,6 +399,52 @@ class FlockViewModel(
             }.onFailure { err ->
                 _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Approval failed"))
             }
+        }
+    }
+
+    fun saveMonthlyBudgets(
+        feedCap: Double,
+        medVetCap: Double,
+        alertThresholdPercent: Int,
+        savedMessage: String,
+    ) {
+        if (_activeRole.value != UserRole.ADMIN) return
+        viewModelScope.launch {
+            prefsRepository.saveMonthlyBudgets(feedCap, medVetCap, alertThresholdPercent)
+            _events.tryEmit(AppEvent.ShowMessage(savedMessage))
+        }
+    }
+
+    private suspend fun emitBudgetAlertIfCrossed(
+        farmId: String,
+        category: EntryCategory,
+        subCategory: String,
+    ) {
+        val isFeed = category == EntryCategory.EXPENSE &&
+            ExpenseSubCategory.fromRaw(subCategory) == ExpenseSubCategory.FEED
+        val isMedVet = category == EntryCategory.MEDICINE_VET ||
+            (category == EntryCategory.EXPENSE &&
+                ExpenseSubCategory.fromRaw(subCategory) == ExpenseSubCategory.TREATMENT)
+        if (!isFeed && !isMedVet) return
+
+        val prefs = preferences.value
+        val entries = repository.observeFarmEntries(farmId).first()
+        val status = computeMonthlyBudgetStatus(
+            entries = entries,
+            feedCap = prefs.monthlyFeedBudgetCap,
+            medVetCap = prefs.monthlyMedVetBudgetCap,
+            alertThresholdPercent = prefs.budgetAlertThresholdPercent,
+        )
+        val catStatus = if (isFeed) status.feedBudget else status.medVetBudget
+        if (catStatus.alertLevel != BudgetAlertLevel.NONE) {
+            _events.tryEmit(
+                AppEvent.BudgetThresholdAlert(
+                    isFeed = isFeed,
+                    alertLevel = catStatus.alertLevel,
+                    percentUsed = catStatus.percentUsed,
+                    spentAmount = catStatus.spentThisMonth,
+                )
+            )
         }
     }
 
@@ -549,7 +634,7 @@ class FlockViewModel(
         _events.tryEmit(AppEvent.AutoBackupCompleted(result))
     }
 
-    fun generatePdfReport() {
+    fun generatePdfReport(includePending: Boolean = false) {
         val data = (dashboardState.value as? UiState.Success)?.data ?: return
         val farm = data.activeFarm ?: return
         val isSindhi = preferences.value.language == AppLanguage.SINDHI
@@ -560,6 +645,7 @@ class FlockViewModel(
                 summary = data.summary,
                 entries = data.entries,
                 isSindhi = isSindhi,
+                includePending = includePending,
             )
             _isBusy.value = false
             res.onSuccess { pdfResult ->

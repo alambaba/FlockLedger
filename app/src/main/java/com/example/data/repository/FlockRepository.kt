@@ -10,6 +10,7 @@ import com.example.data.model.ApprovalStatus
 import com.example.data.model.EntryCategory
 import com.example.data.model.Farm
 import com.example.data.model.LedgerEntry
+import com.example.data.model.PaymentMethod
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -86,11 +87,17 @@ class FlockRepository(
         receiptBase64: String?,
         entryDateMillis: Long,
         approvalStatus: ApprovalStatus,
+        paymentMethod: PaymentMethod = PaymentMethod.CASH,
     ): Result<Unit> = try {
         val cleanTitle = title.trim().take(120)
         require(cleanTitle.isNotEmpty()) { "Title cannot be empty" }
-        require(amount > 0.0 && amount <= 100_000_000.0) { "Amount out of bounds" }
-        require(livestockCount in 0L..100_000L) { "Livestock count out of bounds" }
+        if (category == EntryCategory.LIVESTOCK_DEATH) {
+            require(amount >= 0.0 && amount <= 100_000_000.0) { "Amount out of bounds" }
+            require(livestockCount > 0L && livestockCount <= 100_000L) { "Livestock count out of bounds" }
+        } else {
+            require(amount > 0.0 && amount <= 100_000_000.0) { "Amount out of bounds" }
+            require(livestockCount in 0L..100_000L) { "Livestock count out of bounds" }
+        }
 
         val now = System.currentTimeMillis()
         val entryId = "e_${UUID.randomUUID().toString().replace("-", "").take(16)}"
@@ -114,10 +121,13 @@ class FlockRepository(
                 updatedAtMillis = now,
                 approvalStatus = approvalStatus.name,
                 subCategory = cleanSub,
+                paymentMethod = paymentMethod.name,
             )
         )
 
-        val isShepherdCategory = category == EntryCategory.SHEPHERD_ADVANCE || category == EntryCategory.SHEPHERD_SALARY
+        val isShepherdCategory = category == EntryCategory.SHEPHERD_ADVANCE ||
+            category == EntryCategory.SHEPHERD_ADVANCE_RECOVERY ||
+            category == EntryCategory.SHEPHERD_SALARY
         if (isShepherdCategory && cleanShepherd.isNotEmpty() && cleanShepherd !in farm.shepherds && farm.shepherds.size < 30) {
             farmDao.updateFarmSettings(
                 farmId = farm.id,
@@ -148,10 +158,15 @@ class FlockRepository(
         receiptBase64: String?,
         entryDateMillis: Long,
         approvalStatus: ApprovalStatus = existingEntry.parsedApprovalStatus(),
+        paymentMethod: PaymentMethod = existingEntry.parsedPaymentMethod(),
     ): Result<Unit> = try {
         val cleanTitle = title.trim().take(120)
         require(cleanTitle.isNotEmpty()) { "Title cannot be empty" }
-        require(amount > 0.0 && amount <= 100_000_000.0) { "Amount out of bounds" }
+        if (category == EntryCategory.LIVESTOCK_DEATH) {
+            require(amount >= 0.0 && amount <= 100_000_000.0) { "Amount out of bounds" }
+        } else {
+            require(amount > 0.0 && amount <= 100_000_000.0) { "Amount out of bounds" }
+        }
 
         val now = System.currentTimeMillis()
         val cleanShepherd = shepherdName.trim().take(80)
@@ -173,6 +188,7 @@ class FlockRepository(
                 updatedAtMillis = now,
                 approvalStatus = approvalStatus.name,
                 subCategory = cleanSub,
+                paymentMethod = paymentMethod.name,
             )
         )
         Result.success(Unit)
@@ -268,6 +284,7 @@ class FlockRepository(
                 updatedAtMillis = entry.updatedAtMillis,
                 approvalStatus = entry.approvalStatus,
                 subCategory = entry.subCategory,
+                paymentMethod = entry.paymentMethod,
             )
         }
         if (farmEntities.isNotEmpty()) {
