@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -47,6 +49,8 @@ import java.io.File
 @Composable
 fun StorageInfoDialog(
     strings: AppStrings,
+    onExportFullBackup: () -> Unit,
+    onRestoreBackup: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -131,9 +135,35 @@ fun StorageInfoDialog(
                 StoragePathCard(
                     title = strings.storagePdfPublicFolderLabel,
                     path = "Downloads/FlockLedger",
-                    subtitle = reportsDir.absolutePath,
+                    subtitle = "FlockLedger_Safety_Backup.json • ${reportsDir.absolutePath}",
                     testTag = "storage_pdf_dir_text"
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onExportFullBackup,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("storage_export_backup_button")
+                    ) {
+                        Icon(Icons.Rounded.SaveAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text(strings.exportBackupFile)
+                    }
+                    OutlinedButton(
+                        onClick = onRestoreBackup,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("storage_restore_backup_button")
+                    ) {
+                        Icon(Icons.Rounded.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text(strings.restoreBackupFile)
+                    }
+                }
 
                 Card(
                     shape = RoundedCornerShape(14.dp),

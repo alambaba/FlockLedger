@@ -5,6 +5,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
+import com.example.data.backup.AvailableAppUpdate
 import com.example.data.backup.BackupExecutionResult
 import com.example.data.backup.BackupManager
 import com.example.data.model.ApprovalStatus
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -48,7 +51,13 @@ sealed interface AppEvent {
     data class PdfReady(val result: GeneratedPdfResult) : AppEvent
     data class CsvReady(val uri: Uri) : AppEvent
     data class AutoBackupCompleted(val result: BackupExecutionResult) : AppEvent
+    data class OpenUpdateUrl(val url: String) : AppEvent
 }
+
+data class PostUpdateBanner(
+    val versionName: String,
+    val totalEntriesCount: Int,
+)
 
 data class DashboardData(
     val farms: List<Farm>,
@@ -76,6 +85,12 @@ class FlockViewModel(
 
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
+
+    private val _postUpdateBanner = MutableStateFlow<PostUpdateBanner?>(null)
+    val postUpdateBanner: StateFlow<PostUpdateBanner?> = _postUpdateBanner.asStateFlow()
+
+    private val _availableUpdate = MutableStateFlow<AvailableAppUpdate?>(null)
+    val availableUpdate: StateFlow<AvailableAppUpdate?> = _availableUpdate.asStateFlow()
 
     private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 8)
     val events: SharedFlow<AppEvent> = _events.asSharedFlow()
@@ -145,7 +160,36 @@ class FlockViewModel(
     init {
         viewModelScope.launch {
             repository.ensureDefaultFarm()
+            val prefs = prefsRepository.preferencesFlow.first()
+            val entryCount = repository.countAllEntries()
+            val currentCode = BuildConfig.VERSION_CODE.toLong()
+            val currentName = BuildConfig.VERSION_NAME
+            val isAppUpdated = (prefs.lastSeenVersionCode in 1L until currentCode) ||
+                (prefs.lastSeenVersionCode == 0L && entryCount > 0)
+
+            if (isAppUpdated) {
+                refreshSafetyMirrorInternal()
+                _postUpdateBanner.value = PostUpdateBanner(
+                    versionName = currentName,
+                    totalEntriesCount = entryCount,
+                )
+            }
+            if (prefs.lastSeenVersionCode != currentCode || prefs.lastSeenVersionName != currentName) {
+                prefsRepository.markVersionSeen(currentCode, currentName)
+            }
+            if (prefs.updateSourceRepo.isNotBlank()) {
+                _availableUpdate.value = backupManager.checkAppUpdate(
+                    repoOrUrl = prefs.updateSourceRepo,
+                    currentVersionCode = currentCode,
+                    currentVersionName = currentName,
+                )
+            }
         }
+    }
+
+    private suspend fun refreshSafetyMirrorInternal() {
+        val (farms, entries) = repository.getAllFarmsAndEntries()
+        backupManager.saveSafetySnapshotEverywhere(farms, entries)
     }
 
     fun retryInitialization() {
@@ -284,6 +328,7 @@ class FlockViewModel(
             _isBusy.value = false
 
             result.onSuccess {
+                refreshSafetyMirrorInternal()
                 _events.tryEmit(AppEvent.ShowMessage(if (status == ApprovalStatus.PENDING) pendingMessage else savedMessage))
                 if (editingEntry == null && status == ApprovalStatus.APPROVED) {
                     val count = prefsRepository.incrementEntryCounter()
@@ -305,6 +350,7 @@ class FlockViewModel(
             val res = repository.setApprovalStatus(entryId, ApprovalStatus.APPROVED)
             _isBusy.value = false
             res.onSuccess {
+                refreshSafetyMirrorInternal()
                 _events.tryEmit(AppEvent.ShowMessage(approvedMsg))
                 val count = prefsRepository.incrementEntryCounter()
                 if (count >= 5) {
@@ -324,6 +370,7 @@ class FlockViewModel(
             val res = repository.setApprovalStatus(entryId, ApprovalStatus.REJECTED)
             _isBusy.value = false
             res.onSuccess {
+                refreshSafetyMirrorInternal()
                 _events.tryEmit(AppEvent.ShowMessage(rejectedMsg))
             }.onFailure { err ->
                 _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Reject failed"))
@@ -337,7 +384,9 @@ class FlockViewModel(
             _isBusy.value = true
             val res = repository.deleteEntry(entryId)
             _isBusy.value = false
-            res.onFailure { err ->
+            res.onSuccess {
+                refreshSafetyMirrorInternal()
+            }.onFailure { err ->
                 _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Delete failed"))
             }
         }
@@ -349,12 +398,13 @@ class FlockViewModel(
         val clean = name.trim()
         if (clean.isEmpty() || clean in farm.shepherds) return
         viewModelScope.launch {
-            repository.updateFarmSettings(
+            val res = repository.updateFarmSettings(
                 farm = farm,
                 newName = farm.name,
                 initialFlockCount = farm.initialFlockCount,
                 shepherds = farm.shepherds + clean,
             )
+            if (res.isSuccess) refreshSafetyMirrorInternal()
         }
     }
 
@@ -365,7 +415,9 @@ class FlockViewModel(
             _isBusy.value = true
             val res = repository.updateFarmSettings(farm, newName, initialFlockCount, shepherds)
             _isBusy.value = false
-            res.onFailure { err ->
+            res.onSuccess {
+                refreshSafetyMirrorInternal()
+            }.onFailure { err ->
                 _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Update failed"))
             }
         }
@@ -376,16 +428,104 @@ class FlockViewModel(
         siaEndpointUrl: String,
         siaBucket: String,
         siaToken: String,
+        updateSourceRepo: String = preferences.value.updateSourceRepo,
     ) {
         if (_activeRole.value != UserRole.ADMIN) return
         viewModelScope.launch {
             prefsRepository.saveBackupEndpoints(googleSheetUrl, siaEndpointUrl, siaBucket, siaToken)
+            prefsRepository.saveUpdateSource(updateSourceRepo)
+            if (updateSourceRepo.isNotBlank()) {
+                _availableUpdate.value = backupManager.checkAppUpdate(
+                    repoOrUrl = updateSourceRepo,
+                    currentVersionCode = BuildConfig.VERSION_CODE.toLong(),
+                    currentVersionName = BuildConfig.VERSION_NAME,
+                )
+            } else {
+                _availableUpdate.value = null
+            }
             _events.tryEmit(AppEvent.ShowMessage("Backup configuration saved"))
+        }
+    }
+
+    fun dismissPostUpdateBanner() {
+        _postUpdateBanner.value = null
+    }
+
+    fun saveSafetyBackupToDownloadsNow(savedMsg: String) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            refreshSafetyMirrorInternal()
+            _isBusy.value = false
+            _events.tryEmit(AppEvent.ShowMessage(savedMsg))
+        }
+    }
+
+    fun exportFullBackupToUri(uri: Uri, savedMsg: String) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            val (farms, entries) = repository.getAllFarmsAndEntries()
+            val res = backupManager.exportBackupToUri(uri, farms, entries)
+            _isBusy.value = false
+            res.onSuccess {
+                _events.tryEmit(AppEvent.ShowMessage(savedMsg))
+            }.onFailure { err ->
+                _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Export failed"))
+            }
+        }
+    }
+
+    fun restoreBackupFromUri(uri: Uri, successTemplate: String, errorMsg: String) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            val parsed = backupManager.readBackupFromUri(uri)
+            parsed.onSuccess { (farms, entries) ->
+                val restoreRes = repository.restoreBackupData(farms, entries)
+                restoreRes.onSuccess { stats ->
+                    refreshSafetyMirrorInternal()
+                    _events.tryEmit(
+                        AppEvent.ShowMessage(
+                            String.format(successTemplate, stats.farmsRestored, stats.entriesRestored)
+                        )
+                    )
+                }.onFailure {
+                    _events.tryEmit(AppEvent.ShowMessage(errorMsg))
+                }
+            }.onFailure {
+                _events.tryEmit(AppEvent.ShowMessage(errorMsg))
+            }
+            _isBusy.value = false
+        }
+    }
+
+    fun checkForAppUpdateNow(repoOrUrl: String, noUpdateMsg: String) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            val found = backupManager.checkAppUpdate(
+                repoOrUrl = repoOrUrl,
+                currentVersionCode = BuildConfig.VERSION_CODE.toLong(),
+                currentVersionName = BuildConfig.VERSION_NAME,
+            )
+            _availableUpdate.value = found
+            _isBusy.value = false
+            if (found == null) {
+                _events.tryEmit(AppEvent.ShowMessage(noUpdateMsg))
+            }
+        }
+    }
+
+    fun backupAndLaunchUpdate(updateUrl: String, backupSavedMsg: String) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            refreshSafetyMirrorInternal()
+            _isBusy.value = false
+            _events.tryEmit(AppEvent.ShowMessage(backupSavedMsg))
+            _events.tryEmit(AppEvent.OpenUpdateUrl(updateUrl))
         }
     }
 
     fun runBackupNow() {
         viewModelScope.launch {
+            refreshSafetyMirrorInternal()
             triggerBackupInternal(resetCounter = true)
         }
     }

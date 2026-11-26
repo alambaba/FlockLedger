@@ -2,6 +2,9 @@ package com.example.ui.screens
 
 import android.app.Application
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -157,6 +160,27 @@ private fun MainWorkspace(
     val prefs by viewModel.preferences.collectAsStateWithLifecycle()
     val dashboardState by viewModel.dashboardState.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
+    val postUpdateBanner by viewModel.postUpdateBanner.collectAsStateWithLifecycle()
+    val availableUpdate by viewModel.availableUpdate.collectAsStateWithLifecycle()
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportFullBackupToUri(uri, strings.autoSafetyBackupSavedMsg)
+        }
+    }
+    val restoreBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.restoreBackupFromUri(
+                uri = uri,
+                successTemplate = strings.restoreSuccessMsg,
+                errorMsg = strings.restoreFailedMsg,
+            )
+        }
+    }
 
     val isAdminView = activeRole == UserRole.ADMIN
     val bottomNavItems = remember(strings) { buildBottomNavItems(strings) }
@@ -231,6 +255,10 @@ private fun MainWorkspace(
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     context.startActivity(Intent.createChooser(shareIntent, strings.exportCsvShare))
+                }
+                is AppEvent.OpenUpdateUrl -> {
+                    val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(event.url))
+                    context.startActivity(viewIntent)
                 }
             }
         }
@@ -497,6 +525,8 @@ private fun MainWorkspace(
                                                 entriesSinceBackup = prefs.entriesSinceBackup,
                                                 isAdminView = isAdminView,
                                                 strings = strings,
+                                                postUpdateBanner = postUpdateBanner,
+                                                availableUpdate = availableUpdate,
                                                 onQuickAddCategory = { cat -> openEditorForCategory(cat, "") },
                                                 onQuickAddFarmSubCategory = openEditorForFarmSubCategory,
                                                 onEditEntry = openEditorForEntry,
@@ -505,7 +535,17 @@ private fun MainWorkspace(
                                                 onViewReceipt = { viewingReceiptEntry = it },
                                                 onDownloadPdf = { viewModel.generatePdfReport() },
                                                 onOpenBackupSettings = { showBackupDialog = true },
-                                                onOpenLoansPage = { navigateToRoute(ROUTE_LOANS) }
+                                                onOpenLoansPage = { navigateToRoute(ROUTE_LOANS) },
+                                                onSaveSafetyBackupFile = {
+                                                    viewModel.saveSafetyBackupToDownloadsNow(strings.autoSafetyBackupSavedMsg)
+                                                },
+                                                onRestoreBackupFile = {
+                                                    restoreBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                                                },
+                                                onDismissPostUpdateBanner = { viewModel.dismissPostUpdateBanner() },
+                                                onDownloadAvailableUpdate = { url ->
+                                                    viewModel.backupAndLaunchUpdate(url, strings.autoSafetyBackupSavedMsg)
+                                                }
                                             )
                                         }
                                         composable(ROUTE_LEDGER) {
@@ -633,11 +673,20 @@ private fun MainWorkspace(
             prefs = prefs,
             strings = strings,
             onDismiss = { showBackupDialog = false },
-            onSaveConfig = { sheetUrl, siaUrl, bucket, token ->
-                viewModel.saveBackupConfiguration(sheetUrl, siaUrl, bucket, token)
+            onSaveConfig = { sheetUrl, siaUrl, bucket, token, updateRepo ->
+                viewModel.saveBackupConfiguration(sheetUrl, siaUrl, bucket, token, updateRepo)
             },
             onBackupNow = { viewModel.runBackupNow() },
-            onExportCsv = { viewModel.exportCsv() }
+            onExportCsv = { viewModel.exportCsv() },
+            onExportFullBackup = {
+                exportBackupLauncher.launch("FlockLedger_Backup_${System.currentTimeMillis()}.json")
+            },
+            onRestoreBackup = {
+                restoreBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+            },
+            onCheckAppUpdate = { repoOrUrl ->
+                viewModel.checkForAppUpdateNow(repoOrUrl, strings.noUpdateAvailableMsg)
+            }
         )
     }
 
@@ -669,6 +718,12 @@ private fun MainWorkspace(
     if (showStorageInfoDialog) {
         StorageInfoDialog(
             strings = strings,
+            onExportFullBackup = {
+                exportBackupLauncher.launch("FlockLedger_Backup_${System.currentTimeMillis()}.json")
+            },
+            onRestoreBackup = {
+                restoreBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+            },
             onDismiss = { showStorageInfoDialog = false }
         )
     }

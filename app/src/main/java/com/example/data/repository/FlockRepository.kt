@@ -222,4 +222,71 @@ class FlockRepository(
     } catch (e: Exception) {
         Result.failure(e)
     }
+
+    suspend fun getAllFarmsAndEntries(): Pair<List<Farm>, List<LedgerEntry>> {
+        val farms = farmDao.getAllFarmsOnce().map { it.toDomain() }
+        val entries = entryDao.getAllEntriesOnce().map { it.toDomain() }
+        return farms to entries
+    }
+
+    suspend fun countAllEntries(): Int = entryDao.countAllEntries()
+
+    suspend fun restoreBackupData(
+        farms: List<Farm>,
+        entries: List<LedgerEntry>,
+    ): Result<RestoreResult> = try {
+        val farmEntities = farms.map { farm ->
+            FarmEntity(
+                id = farm.id.ifBlank { "farm_default" },
+                name = farm.name.trim().ifEmpty { "My Sheep Farm" },
+                shepherdsJson = FarmEntity.encodeShepherds(farm.shepherds),
+                initialFlockCount = farm.initialFlockCount.coerceIn(0L, 100_000L),
+                createdAtMillis = farm.createdAtMillis,
+                updatedAtMillis = farm.updatedAtMillis,
+            )
+        }
+        val validFarmIds = farmEntities.map { it.id }.toSet()
+        val entryEntities = entries.map { entry ->
+            val targetFarmId = if (entry.farmId in validFarmIds) {
+                entry.farmId
+            } else {
+                farmEntities.firstOrNull()?.id ?: "farm_default"
+            }
+            LedgerEntryEntity(
+                id = entry.id,
+                farmId = targetFarmId,
+                createdByName = entry.createdByName,
+                category = entry.category,
+                amount = entry.amount,
+                livestockCount = entry.livestockCount,
+                shepherdName = entry.shepherdName,
+                title = entry.title,
+                note = entry.note,
+                receiptBase64 = entry.receiptBase64,
+                entryDateMillis = entry.entryDateMillis,
+                createdAtMillis = entry.createdAtMillis,
+                updatedAtMillis = entry.updatedAtMillis,
+                approvalStatus = entry.approvalStatus,
+                subCategory = entry.subCategory,
+            )
+        }
+        if (farmEntities.isNotEmpty()) {
+            farmDao.upsertFarms(farmEntities)
+        } else {
+            ensureDefaultFarm()
+        }
+        if (entryEntities.isNotEmpty()) {
+            entryDao.upsertEntries(entryEntities)
+        }
+        Result.success(RestoreResult(farmsRestored = farmEntities.size, entriesRestored = entryEntities.size))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
 }
+
+data class RestoreResult(
+    val farmsRestored: Int,
+    val entriesRestored: Int,
+)

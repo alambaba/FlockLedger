@@ -20,6 +20,9 @@ import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,15 +63,19 @@ fun BackupSettingsDialog(
     prefs: UserPreferences,
     strings: AppStrings,
     onDismiss: () -> Unit,
-    onSaveConfig: (sheetUrl: String, siaUrl: String, siaBucket: String, siaToken: String) -> Unit,
+    onSaveConfig: (sheetUrl: String, siaUrl: String, siaBucket: String, siaToken: String, updateRepo: String) -> Unit,
     onBackupNow: () -> Unit,
     onExportCsv: () -> Unit,
+    onExportFullBackup: () -> Unit,
+    onRestoreBackup: () -> Unit,
+    onCheckAppUpdate: (repoOrUrl: String) -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     var sheetUrl by remember(prefs.googleSheetWebhookUrl) { mutableStateOf(prefs.googleSheetWebhookUrl) }
     var siaUrl by remember(prefs.siaEndpointUrl) { mutableStateOf(prefs.siaEndpointUrl) }
     var siaBucket by remember(prefs.siaBucket) { mutableStateOf(prefs.siaBucket) }
     var siaToken by remember(prefs.siaAuthToken) { mutableStateOf(prefs.siaAuthToken) }
+    var updateRepo by remember(prefs.updateSourceRepo) { mutableStateOf(prefs.updateSourceRepo) }
     var copiedMsg by remember { mutableStateOf(false) }
 
     Dialog(
@@ -167,6 +174,32 @@ fun BackupSettingsDialog(
                     }
                 }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onExportFullBackup,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("export_json_backup_button")
+                    ) {
+                        Icon(Icons.Rounded.SaveAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(strings.exportBackupFile)
+                    }
+                    OutlinedButton(
+                        onClick = onRestoreBackup,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("restore_json_backup_button")
+                    ) {
+                        Icon(Icons.Rounded.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(strings.restoreBackupFile)
+                    }
+                }
+
                 HorizontalDivider()
 
                 // Google Sheets Webhook Configuration
@@ -227,6 +260,31 @@ fun BackupSettingsDialog(
                     )
                 }
 
+                HorizontalDivider()
+
+                OutlinedTextField(
+                    value = updateRepo,
+                    onValueChange = { updateRepo = it },
+                    label = { Text(strings.updateSourceLabel) },
+                    placeholder = { Text(strings.updateSourceHint) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("update_source_input")
+                )
+
+                OutlinedButton(
+                    onClick = { onCheckAppUpdate(updateRepo) },
+                    enabled = updateRepo.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("check_app_update_button")
+                ) {
+                    Icon(Icons.Rounded.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(strings.checkUpdateNow)
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
@@ -235,7 +293,7 @@ fun BackupSettingsDialog(
                     Spacer(Modifier.size(8.dp))
                     Button(
                         onClick = {
-                            onSaveConfig(sheetUrl, siaUrl, siaBucket, siaToken)
+                            onSaveConfig(sheetUrl, siaUrl, siaBucket, siaToken, updateRepo)
                             onDismiss()
                         },
                         modifier = Modifier.testTag("save_backup_config_button")

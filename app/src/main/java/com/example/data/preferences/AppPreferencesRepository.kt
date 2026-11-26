@@ -38,6 +38,9 @@ data class UserPreferences(
     val adminPinSalt: String = "",
     val caretakerPinHash: String = "",
     val caretakerPinSalt: String = "",
+    val lastSeenVersionCode: Long = 0L,
+    val lastSeenVersionName: String = "",
+    val updateSourceRepo: String = "",
 ) {
     val pinsConfigured: Boolean
         get() = adminPinHash.isNotEmpty() && caretakerPinHash.isNotEmpty()
@@ -61,6 +64,9 @@ class AppPreferencesRepository(private val context: Context) {
         val ADMIN_PIN_SALT = stringPreferencesKey("admin_pin_salt")
         val CARETAKER_PIN_HASH = stringPreferencesKey("caretaker_pin_hash")
         val CARETAKER_PIN_SALT = stringPreferencesKey("caretaker_pin_salt")
+        val LAST_SEEN_VERSION_CODE = longPreferencesKey("last_seen_version_code")
+        val LAST_SEEN_VERSION_NAME = stringPreferencesKey("last_seen_version_name")
+        val UPDATE_SOURCE_REPO = stringPreferencesKey("update_source_repo")
     }
 
     val preferencesFlow: Flow<UserPreferences> = context.appDataStore.data.map { prefs ->
@@ -81,6 +87,9 @@ class AppPreferencesRepository(private val context: Context) {
             adminPinSalt = prefs[Keys.ADMIN_PIN_SALT] ?: "",
             caretakerPinHash = prefs[Keys.CARETAKER_PIN_HASH] ?: "",
             caretakerPinSalt = prefs[Keys.CARETAKER_PIN_SALT] ?: "",
+            lastSeenVersionCode = prefs[Keys.LAST_SEEN_VERSION_CODE] ?: 0L,
+            lastSeenVersionName = prefs[Keys.LAST_SEEN_VERSION_NAME] ?: "",
+            updateSourceRepo = prefs[Keys.UPDATE_SOURCE_REPO] ?: "",
         )
     }
 
@@ -145,6 +154,19 @@ class AppPreferencesRepository(private val context: Context) {
             }
             prefs[Keys.LAST_BACKUP_MILLIS] = timestampMillis
             prefs[Keys.LAST_BACKUP_SUMMARY] = summary
+        }
+    }
+
+    suspend fun markVersionSeen(versionCode: Long, versionName: String) {
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.LAST_SEEN_VERSION_CODE] = versionCode
+            prefs[Keys.LAST_SEEN_VERSION_NAME] = versionName
+        }
+    }
+
+    suspend fun saveUpdateSource(repoOrUrl: String) {
+        context.appDataStore.edit { prefs ->
+            prefs[Keys.UPDATE_SOURCE_REPO] = repoOrUrl.trim()
         }
     }
 

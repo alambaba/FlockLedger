@@ -114,11 +114,17 @@ interface FarmDao {
     @Query("SELECT * FROM farms ORDER BY createdAtMillis ASC")
     fun observeFarms(): Flow<List<FarmEntity>>
 
+    @Query("SELECT * FROM farms ORDER BY createdAtMillis ASC")
+    suspend fun getAllFarmsOnce(): List<FarmEntity>
+
     @Query("SELECT COUNT(*) FROM farms")
     suspend fun countFarms(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertFarm(farm: FarmEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFarms(farms: List<FarmEntity>)
 
     @Query(
         "UPDATE farms SET name = :name, initialFlockCount = :initialFlockCount, shepherdsJson = :shepherdsJson, updatedAtMillis = :updatedAtMillis WHERE id = :farmId"
@@ -137,8 +143,17 @@ interface LedgerEntryDao {
     @Query("SELECT * FROM ledger_entries WHERE farmId = :farmId ORDER BY entryDateMillis DESC, createdAtMillis DESC")
     fun observeEntriesForFarm(farmId: String): Flow<List<LedgerEntryEntity>>
 
+    @Query("SELECT * FROM ledger_entries ORDER BY entryDateMillis DESC, createdAtMillis DESC")
+    suspend fun getAllEntriesOnce(): List<LedgerEntryEntity>
+
+    @Query("SELECT COUNT(*) FROM ledger_entries")
+    suspend fun countAllEntries(): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertEntry(entry: LedgerEntryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertEntries(entries: List<LedgerEntryEntity>)
 
     @Query("UPDATE ledger_entries SET approvalStatus = :status, updatedAtMillis = :updatedAtMillis WHERE id = :entryId")
     suspend fun updateApprovalStatus(entryId: String, status: String, updatedAtMillis: Long)

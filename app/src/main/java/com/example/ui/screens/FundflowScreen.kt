@@ -29,9 +29,14 @@ import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -55,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.backup.AvailableAppUpdate
 import com.example.data.model.ApprovalStatus
 import com.example.data.model.EntryCategory
 import com.example.data.model.ExpenseSubCategory
@@ -67,11 +73,13 @@ import com.example.ui.components.formatCurrency
 import com.example.ui.components.subCategoryLabel
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.LivestockBuyTeal
+import com.example.ui.theme.LivestockSellGreen
 import com.example.ui.theme.LoanTakenAmber
 import com.example.ui.theme.MedicineBlue
 import com.example.ui.theme.PendingAmber
 import com.example.ui.theme.ShepherdAdvancePurple
 import com.example.ui.theme.ShepherdSalaryIndigo
+import com.example.ui.viewmodel.PostUpdateBanner
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -82,6 +90,8 @@ fun FundflowScreen(
     entriesSinceBackup: Int,
     isAdminView: Boolean,
     strings: AppStrings,
+    postUpdateBanner: PostUpdateBanner?,
+    availableUpdate: AvailableAppUpdate?,
     onQuickAddCategory: (EntryCategory) -> Unit,
     onQuickAddFarmSubCategory: (ExpenseSubCategory) -> Unit,
     onEditEntry: (LedgerEntry) -> Unit,
@@ -91,15 +101,24 @@ fun FundflowScreen(
     onDownloadPdf: () -> Unit,
     onOpenBackupSettings: () -> Unit,
     onOpenLoansPage: () -> Unit,
+    onSaveSafetyBackupFile: () -> Unit,
+    onRestoreBackupFile: () -> Unit,
+    onDismissPostUpdateBanner: () -> Unit,
+    onDownloadAvailableUpdate: (String) -> Unit,
 ) {
     if (!isAdminView) {
         CaretakerRestrictedDashboard(
             farmName = farm.name,
             entries = entries,
             strings = strings,
+            postUpdateBanner = postUpdateBanner,
+            availableUpdate = availableUpdate,
             onQuickAddCategory = onQuickAddCategory,
             onQuickAddFarmSubCategory = onQuickAddFarmSubCategory,
             onViewReceipt = onViewReceipt,
+            onSaveSafetyBackupFile = onSaveSafetyBackupFile,
+            onDismissPostUpdateBanner = onDismissPostUpdateBanner,
+            onDownloadAvailableUpdate = onDownloadAvailableUpdate,
         )
         return
     }
@@ -114,6 +133,29 @@ fun FundflowScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        if (availableUpdate != null) {
+            item {
+                AvailableUpdateBannerCard(
+                    update = availableUpdate,
+                    strings = strings,
+                    onUpdateClick = { onDownloadAvailableUpdate(availableUpdate.downloadUrl) },
+                    modifier = Modifier.widthIn(max = 640.dp)
+                )
+            }
+        }
+
+        if (postUpdateBanner != null) {
+            item {
+                PostUpdateSafeBannerCard(
+                    banner = postUpdateBanner,
+                    strings = strings,
+                    onSaveBackupClick = onSaveSafetyBackupFile,
+                    onDismiss = onDismissPostUpdateBanner,
+                    modifier = Modifier.widthIn(max = 640.dp)
+                )
+            }
+        }
+
         // Adaptive Hero Card — wraps content naturally so numbers and labels are NEVER clipped
         item {
             Card(
@@ -416,6 +458,19 @@ fun FundflowScreen(
 
         if (entries.isEmpty()) {
             item { EmptyLedgerCard(strings = strings, modifier = Modifier.widthIn(max = 640.dp)) }
+            item {
+                OutlinedButton(
+                    onClick = onRestoreBackupFile,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 640.dp)
+                        .testTag("empty_restore_backup_button")
+                ) {
+                    Icon(Icons.Rounded.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(strings.restoreBackupFile)
+                }
+            }
         } else {
             items(entries.take(10), key = { it.id }) { entry ->
                 LedgerEntryCard(
@@ -443,9 +498,14 @@ private fun CaretakerRestrictedDashboard(
     farmName: String,
     entries: List<LedgerEntry>,
     strings: AppStrings,
+    postUpdateBanner: PostUpdateBanner?,
+    availableUpdate: AvailableAppUpdate?,
     onQuickAddCategory: (EntryCategory) -> Unit,
     onQuickAddFarmSubCategory: (ExpenseSubCategory) -> Unit,
     onViewReceipt: (LedgerEntry) -> Unit,
+    onSaveSafetyBackupFile: () -> Unit,
+    onDismissPostUpdateBanner: () -> Unit,
+    onDownloadAvailableUpdate: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -453,6 +513,27 @@ private fun CaretakerRestrictedDashboard(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        if (availableUpdate != null) {
+            item {
+                AvailableUpdateBannerCard(
+                    update = availableUpdate,
+                    strings = strings,
+                    onUpdateClick = { onDownloadAvailableUpdate(availableUpdate.downloadUrl) },
+                    modifier = Modifier.widthIn(max = 620.dp)
+                )
+            }
+        }
+        if (postUpdateBanner != null) {
+            item {
+                PostUpdateSafeBannerCard(
+                    banner = postUpdateBanner,
+                    strings = strings,
+                    onSaveBackupClick = onSaveSafetyBackupFile,
+                    onDismiss = onDismissPostUpdateBanner,
+                    modifier = Modifier.widthIn(max = 620.dp)
+                )
+            }
+        }
         item {
             Card(
                 modifier = Modifier
@@ -685,5 +766,117 @@ private fun SectionBreakdownBar(
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
         )
+    }
+}
+
+@Composable
+private fun PostUpdateSafeBannerCard(
+    banner: PostUpdateBanner,
+    strings: AppStrings,
+    onSaveBackupClick: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = LivestockSellGreen.copy(alpha = 0.13f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.VerifiedUser, contentDescription = null, tint = LivestockSellGreen)
+                Text(
+                    text = String.format(strings.appUpdatedSafeTitle, banner.versionName),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = LivestockSellGreen
+                )
+            }
+            Text(
+                text = String.format(strings.appUpdatedSafeBody, banner.totalEntriesCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onSaveBackupClick,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LivestockSellGreen,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("post_update_backup_button")
+                ) {
+                    Icon(Icons.Rounded.SaveAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(strings.saveSafetyBackupNow, fontSize = 12.sp, lineHeight = 16.sp)
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("post_update_dismiss_button")
+                ) {
+                    Text(strings.dismissAction, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AvailableUpdateBannerCard(
+    update: AvailableAppUpdate,
+    strings: AppStrings,
+    onUpdateClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = String.format(strings.updateAvailableTitle, update.versionName),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            if (update.releaseNotes.isNotBlank()) {
+                Text(
+                    text = update.releaseNotes,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                )
+            }
+            Button(
+                onClick = onUpdateClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("auto_update_app_button")
+            ) {
+                Icon(Icons.Rounded.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text(strings.updateDownloadButton, fontSize = 13.sp)
+            }
+        }
     }
 }

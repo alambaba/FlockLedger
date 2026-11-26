@@ -153,4 +153,32 @@ class ExampleUnitTest {
         assertEquals(10_000.0, summary.farmExpenseSubTotals[com.example.data.model.ExpenseSubCategory.MACHINERY] ?: 0.0, 0.01)
         assertEquals(5_000.0, summary.farmExpenseSubTotals[com.example.data.model.ExpenseSubCategory.OTHER] ?: 0.0, 0.01)
     }
+
+    @Test
+    fun versionComparison_detectsNewerAppReleasesAccurately() {
+        org.junit.Assert.assertTrue(com.example.data.backup.BackupManager.isVersionNewer("v1.2", "1.1"))
+        org.junit.Assert.assertTrue(com.example.data.backup.BackupManager.isVersionNewer("1.1.1", "1.1"))
+        org.junit.Assert.assertFalse(com.example.data.backup.BackupManager.isVersionNewer("v1.1", "1.1"))
+        org.junit.Assert.assertFalse(com.example.data.backup.BackupManager.isVersionNewer("1.0", "1.1"))
+    }
+
+    @Test
+    fun normalizeUpdateUrl_handlesGithubUrlsAndRepoSlugs() {
+        assertEquals(
+            "https://api.github.com/repos/alam/flockledger/releases/latest",
+            com.example.data.backup.BackupManager.normalizeUpdateUrl("alam/flockledger")
+        )
+        assertEquals(
+            "https://api.github.com/repos/alam/flockledger/releases/latest",
+            com.example.data.backup.BackupManager.normalizeUpdateUrl("https://github.com/alam/flockledger")
+        )
+        assertEquals(
+            "https://api.github.com/repos/alam/flockledger/releases/latest",
+            com.example.data.backup.BackupManager.normalizeUpdateUrl("https://github.com/alam/flockledger.git/")
+        )
+        assertEquals(
+            "https://example.com/version.json",
+            com.example.data.backup.BackupManager.normalizeUpdateUrl("https://example.com/version.json")
+        )
+    }
 }
