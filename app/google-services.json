@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "886414829220",
+    "project_id": "flockledger-49fa7",
+    "storage_bucket": "flockledger-49fa7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:886414829220:android:caa84fd15dce52b3f0a831",
+        "android_client_info": {
+          "package_name": "com.aistudio.flockledger.krmzpq"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6Zo_nLE26ef3onNgbasLY5rEbXDhLEZ8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
