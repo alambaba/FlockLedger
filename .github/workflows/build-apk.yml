@@ -1,105 +1,100 @@
-name: Build FlockLedger Android APK
+name: Build FlockLedger APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - ".github/workflows/build-apk.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build FlockLedger APK
     runs-on: ubuntu-latest
 
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-      - name: Checkout source code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v5
+      - name: Check Firebase configuration
+        run: |
+          test -f app/google-services.json || {
+            echo "ERROR: Missing app/google-services.json"
+            exit 1
+          }
+
+          grep -q '"project_id": "flockledger-49fa7"' app/google-services.json
+
+          grep -q '"package_name": "com.aistudio.flockledger.krmzpq"' app/google-services.json
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Configure Android SDK
-        run: |
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK Licenses & Install SDK 36
-        run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Install Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.3.1'
+          gradle-version: "9.3.1"
 
-      - name: Bump Release Version
-        id: version
-        run: |
-          BASE_CODE=$(grep -E '^\s*versionCode\s*=' app/build.gradle.kts | sed -E 's/[^0-9]//g' | head -n1)
-          BASE_NAME=$(grep -E '^\s*versionName\s*=' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/' | head -n1)
-          BASE_CODE=${BASE_CODE:-2}
-          BASE_NAME=${BASE_NAME:-1.1}
-          NEW_CODE=$((BASE_CODE + GITHUB_RUN_NUMBER))
-          NEW_NAME="${BASE_NAME}.${GITHUB_RUN_NUMBER}"
-          sed -i -E "s/^([[:space:]]*versionCode[[:space:]]*=).*/\1 ${NEW_CODE}/" app/build.gradle.kts
-          sed -i -E "s/^([[:space:]]*versionName[[:space:]]*=).*/\1 \"${NEW_NAME}\"/" app/build.gradle.kts
-          echo "version_code=${NEW_CODE}" >> "$GITHUB_OUTPUT"
-          echo "version_name=${NEW_NAME}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=v${NEW_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare Signing Keystore
+      - name: Restore existing signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > debug.keystore
-          elif [ ! -f debug.keystore ]; then
-            keytool -genkeypair -v \
-              -keystore debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "ERROR: Original signing key is missing."
+            exit 1
           fi
 
-      - name: Build FlockLedger APK
-        run: gradle assembleDebug --stacktrace
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > debug.keystore
 
-      - name: Package Versioned APK
+          test -s debug.keystore
+
+          keytool -list \
+            -keystore debug.keystore \
+            -storepass android \
+            -alias androiddebugkey
+
+      - name: Verify application ID
         run: |
-          APK_SRC=$(ls app/build/outputs/apk/debug/*.apk | head -n1)
-          cp "$APK_SRC" "FlockLedger-v${{ steps.version.outputs.version_name }}.apk"
+          grep -q 'applicationId = "com.aistudio.flockledger.krmzpq"' app/build.gradle.kts
+
+          grep -nE 'applicationId|versionCode|versionName' app/build.gradle.kts
+
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Verify APK
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -f "$APK"
+
+          SDK_BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
+            -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+
+          mkdir -p release-output
+
+          cp "$APK" release-output/FlockLedger-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlockLedger-Android-APK
-          path: FlockLedger-v${{ steps.version.outputs.version_name }}.apk
+          name: FlockLedger-APK
+          path: release-output/FlockLedger-debug.apk
           if-no-files-found: error
           retention-days: 30
-
-      - name: Publish GitHub Release with APK
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ steps.version.outputs.tag_name }}"
-          APK_FILE="FlockLedger-v${{ steps.version.outputs.version_name }}.apk"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK_FILE" --clobber
-          else
-            gh release create "$TAG" "$APK_FILE" \
-              --title "FlockLedger $TAG" \
-              --notes "Manual APK release $TAG (versionCode ${{ steps.version.outputs.version_code }})."
-          fi
