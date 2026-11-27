@@ -15,9 +15,11 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.ApprovalStatus
+import com.example.data.model.CommentStatus
 import com.example.data.model.Farm
 import com.example.data.model.LedgerEntry
 import com.example.data.model.PaymentMethod
+import com.example.data.model.ReportComment
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
 
@@ -112,6 +114,36 @@ data class LedgerEntryEntity(
     )
 }
 
+@Entity(
+    tableName = "report_comments",
+    indices = [Index("farmId")]
+)
+data class ReportCommentEntity(
+    @PrimaryKey val id: String,
+    val farmId: String,
+    val entryId: String? = null,
+    val entryTitleSnapshot: String = "",
+    val authorRole: String = "Caretaker",
+    val commentText: String,
+    val status: String = CommentStatus.OPEN.name,
+    val adminResponse: String = "",
+    val createdAtMillis: Long,
+    val updatedAtMillis: Long,
+) {
+    fun toDomain(): ReportComment = ReportComment(
+        id = id,
+        farmId = farmId,
+        entryId = entryId,
+        entryTitleSnapshot = entryTitleSnapshot,
+        authorRole = authorRole,
+        commentText = commentText,
+        status = status,
+        adminResponse = adminResponse,
+        createdAtMillis = createdAtMillis,
+        updatedAtMillis = updatedAtMillis,
+    )
+}
+
 @Dao
 interface FarmDao {
     @Query("SELECT * FROM farms ORDER BY createdAtMillis ASC")
@@ -119,6 +151,9 @@ interface FarmDao {
 
     @Query("SELECT * FROM farms ORDER BY createdAtMillis ASC")
     suspend fun getAllFarmsOnce(): List<FarmEntity>
+
+    @Query("SELECT * FROM farms WHERE id = :farmId LIMIT 1")
+    suspend fun getFarmById(farmId: String): FarmEntity?
 
     @Query("SELECT COUNT(*) FROM farms")
     suspend fun countFarms(): Int
@@ -149,6 +184,9 @@ interface LedgerEntryDao {
     @Query("SELECT * FROM ledger_entries ORDER BY entryDateMillis DESC, createdAtMillis DESC")
     suspend fun getAllEntriesOnce(): List<LedgerEntryEntity>
 
+    @Query("SELECT * FROM ledger_entries WHERE id = :entryId LIMIT 1")
+    suspend fun getEntryById(entryId: String): LedgerEntryEntity?
+
     @Query("SELECT COUNT(*) FROM ledger_entries")
     suspend fun countAllEntries(): Int
 
@@ -165,14 +203,39 @@ interface LedgerEntryDao {
     suspend fun deleteEntryById(entryId: String)
 }
 
+@Dao
+interface ReportCommentDao {
+    @Query("SELECT * FROM report_comments WHERE farmId = :farmId ORDER BY createdAtMillis DESC")
+    fun observeCommentsForFarm(farmId: String): Flow<List<ReportCommentEntity>>
+
+    @Query("SELECT * FROM report_comments ORDER BY createdAtMillis DESC")
+    suspend fun getAllCommentsOnce(): List<ReportCommentEntity>
+
+    @Query("SELECT * FROM report_comments WHERE id = :commentId LIMIT 1")
+    suspend fun getCommentById(commentId: String): ReportCommentEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertComment(comment: ReportCommentEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertComments(comments: List<ReportCommentEntity>)
+
+    @Query("UPDATE report_comments SET status = :status, adminResponse = :adminResponse, updatedAtMillis = :updatedAtMillis WHERE id = :commentId")
+    suspend fun updateCommentStatus(commentId: String, status: String, adminResponse: String, updatedAtMillis: Long)
+
+    @Query("DELETE FROM report_comments WHERE id = :commentId")
+    suspend fun deleteCommentById(commentId: String)
+}
+
 @Database(
-    entities = [FarmEntity::class, LedgerEntryEntity::class],
-    version = 4,
+    entities = [FarmEntity::class, LedgerEntryEntity::class, ReportCommentEntity::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class FlockDatabase : RoomDatabase() {
     abstract fun farmDao(): FarmDao
     abstract fun ledgerEntryDao(): LedgerEntryDao
+    abstract fun reportCommentDao(): ReportCommentDao
 
     companion object {
         @Volatile
@@ -202,6 +265,30 @@ abstract class FlockDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS report_comments (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        farmId TEXT NOT NULL,
+                        entryId TEXT,
+                        entryTitleSnapshot TEXT NOT NULL DEFAULT '',
+                        authorRole TEXT NOT NULL DEFAULT 'Caretaker',
+                        commentText TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'OPEN',
+                        adminResponse TEXT NOT NULL DEFAULT '',
+                        createdAtMillis INTEGER NOT NULL,
+                        updatedAtMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_report_comments_farmId ON report_comments(farmId)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): FlockDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -209,7 +296,7 @@ abstract class FlockDatabase : RoomDatabase() {
                     FlockDatabase::class.java,
                     "flock_ledger.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }

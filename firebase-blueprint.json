@@ -1,0 +1,73 @@
+{
+  "databaseId": "ai-studio-android-flockled-6064b7dc-58e4-4756-9f41-714725968d6e",
+  "collections": [
+    {
+      "path": "/users/{userId}",
+      "description": "Authenticated user profile root for FlockLedger",
+      "ownerField": "userId",
+      "fields": {
+        "userId": "string (must equal auth.uid)",
+        "displayName": "string",
+        "email": "string",
+        "createdAt": "timestamp (serverTimestamp on create, immutable)",
+        "updatedAt": "timestamp (serverTimestamp)"
+      }
+    },
+    {
+      "path": "/users/{userId}/farms/{farmId}",
+      "description": "Sheep farm account metadata and shepherd roster owned by userId",
+      "ownerField": "userId",
+      "fields": {
+        "name": "string (1..80 chars)",
+        "shepherds": "list<string> (max 30 items)",
+        "initialFlockCount": "number (0..100000)",
+        "createdAtMillis": "number",
+        "updatedAtMillis": "number",
+        "createdAt": "timestamp (serverTimestamp on create, immutable)",
+        "updatedAt": "timestamp (serverTimestamp)"
+      }
+    },
+    {
+      "path": "/users/{userId}/farms/{farmId}/entries/{entryId}",
+      "description": "Ledger transactions (expenses, medicine/vet, livestock buy/sell/death, shepherd accounts, loans, owner funds)",
+      "ownerField": "userId",
+      "fields": {
+        "farmId": "string (must equal parent farmId)",
+        "createdByName": "string (0..40 chars)",
+        "category": "string (enum EntryCategory name, 1..40 chars)",
+        "subCategory": "string (0..40 chars)",
+        "amount": "number (0..100000000)",
+        "livestockCount": "number (0..100000)",
+        "shepherdName": "string (0..80 chars)",
+        "title": "string (1..120 chars)",
+        "note": "string (0..500 chars)",
+        "receiptBase64": "string | null (max 400000 chars)",
+        "entryDateMillis": "number",
+        "createdAtMillis": "number",
+        "updatedAtMillis": "number",
+        "approvalStatus": "string (APPROVED | PENDING | REJECTED)",
+        "paymentMethod": "string (CASH | CREDIT)",
+        "createdAt": "timestamp (serverTimestamp on create, immutable)",
+        "updatedAt": "timestamp (serverTimestamp)"
+      }
+    },
+    {
+      "path": "/users/{userId}/farms/{farmId}/comments/{commentId}",
+      "description": "Caretaker and admin report correction comments linked to a farm or entry",
+      "ownerField": "userId",
+      "fields": {
+        "farmId": "string (must equal parent farmId)",
+        "entryId": "string | null (max 128 chars)",
+        "entryTitleSnapshot": "string (0..120 chars)",
+        "authorRole": "string (1..40 chars)",
+        "commentText": "string (1..600 chars)",
+        "status": "string (OPEN | RESOLVED)",
+        "adminResponse": "string (0..400 chars)",
+        "createdAtMillis": "number",
+        "updatedAtMillis": "number",
+        "createdAt": "timestamp (serverTimestamp on create, immutable)",
+        "updatedAt": "timestamp (serverTimestamp)"
+      }
+    }
+  ]
+}

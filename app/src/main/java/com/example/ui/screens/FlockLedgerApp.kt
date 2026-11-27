@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
@@ -48,6 +50,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,10 +73,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.data.model.BudgetAlertLevel
+import com.example.data.model.CommentStatus
 import com.example.data.model.EntryCategory
 import com.example.data.model.ExpenseSubCategory
 import com.example.data.model.LedgerEntry
+import com.example.data.pdf.printPdfFile
 import com.example.data.preferences.UserRole
+import com.example.data.remote.CloudSyncStatus
 import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.englishStrings
@@ -86,6 +92,7 @@ import com.example.ui.viewmodel.AppEvent
 import com.example.ui.viewmodel.FlockViewModel
 import com.example.ui.viewmodel.UiState
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun FlockLedgerRoot() {
@@ -99,48 +106,79 @@ fun FlockLedgerRoot() {
                     prefsRepository = deps.prefsRepository,
                     backupManager = deps.backupManager,
                     pdfGenerator = deps.pdfGenerator,
+                    authManager = deps.authManager,
+                    firestoreSync = deps.firestoreSync,
+                    sheepCountManager = deps.sheepCountManager,
                 )
             }
         }
     )
 
+    val context = LocalContext.current
+    val activityContext = context.findActivity() ?: context
     val prefs by vm.preferences.collectAsStateWithLifecycle()
+    val authUser by vm.authUser.collectAsStateWithLifecycle()
+    val isSigningIn by vm.isSigningIn.collectAsStateWithLifecycle()
+    val signInError by vm.signInError.collectAsStateWithLifecycle()
     val activeRole by vm.activeRole.collectAsStateWithLifecycle()
     val isSindhi = prefs.language == AppLanguage.SINDHI
     val strings = remember(isSindhi) { if (isSindhi) sindhiStrings() else englishStrings() }
+
+    LaunchedEffect(Unit) {
+        vm.attemptSilentSignIn(activityContext)
+    }
 
     FlockLedgerTheme(
         darkTheme = prefs.darkMode,
         isSindhiRtl = isSindhi
     ) {
+        val currentUser = authUser
         when {
-            !prefs.pinsConfigured -> {
-                PinSetupScreen(
+            currentUser == null -> {
+                GoogleSignInScreen(
                     strings = strings,
                     darkMode = prefs.darkMode,
+                    isSigningIn = isSigningIn,
+                    errorMessage = signInError,
                     onToggleLanguage = { vm.toggleLanguage() },
                     onToggleDarkMode = { vm.toggleDarkMode() },
-                    onSavePins = { adminPin, caretakerPin ->
-                        vm.setupPins(adminPin, caretakerPin, initialRole = UserRole.ADMIN)
-                    }
+                    onSignInClick = { actCtx -> vm.signInWithGoogle(actCtx) }
                 )
+            }
+            !prefs.pinsConfigured -> {
+                key(currentUser.uid) {
+                    PinSetupScreen(
+                        strings = strings,
+                        darkMode = prefs.darkMode,
+                        onToggleLanguage = { vm.toggleLanguage() },
+                        onToggleDarkMode = { vm.toggleDarkMode() },
+                        onSavePins = { adminPin, caretakerPin ->
+                            vm.setupPins(adminPin, caretakerPin, initialRole = UserRole.ADMIN)
+                        }
+                    )
+                }
             }
             activeRole == null -> {
-                PinUnlockScreen(
-                    strings = strings,
-                    darkMode = prefs.darkMode,
-                    onToggleLanguage = { vm.toggleLanguage() },
-                    onToggleDarkMode = { vm.toggleDarkMode() },
-                    onVerifyPin = { pin -> vm.unlockWithPin(pin) }
-                )
+                key(currentUser.uid) {
+                    PinUnlockScreen(
+                        strings = strings,
+                        darkMode = prefs.darkMode,
+                        onToggleLanguage = { vm.toggleLanguage() },
+                        onToggleDarkMode = { vm.toggleDarkMode() },
+                        onVerifyPin = { pin -> vm.unlockWithPin(pin) }
+                    )
+                }
             }
             else -> {
-                MainWorkspace(
-                    viewModel = vm,
-                    activeRole = activeRole!!,
-                    strings = strings,
-                    isSindhi = isSindhi,
-                )
+                key(currentUser.uid) {
+                    MainWorkspace(
+                        viewModel = vm,
+                        signedInEmail = currentUser.email ?: currentUser.displayName,
+                        activeRole = activeRole!!,
+                        strings = strings,
+                        isSindhi = isSindhi,
+                    )
+                }
             }
         }
     }
@@ -150,6 +188,7 @@ fun FlockLedgerRoot() {
 @Composable
 private fun MainWorkspace(
     viewModel: FlockViewModel,
+    signedInEmail: String?,
     activeRole: UserRole,
     strings: AppStrings,
     isSindhi: Boolean,
@@ -164,9 +203,11 @@ private fun MainWorkspace(
 
     val prefs by viewModel.preferences.collectAsStateWithLifecycle()
     val dashboardState by viewModel.dashboardState.collectAsStateWithLifecycle()
+    val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
     val postUpdateBanner by viewModel.postUpdateBanner.collectAsStateWithLifecycle()
     val availableUpdate by viewModel.availableUpdate.collectAsStateWithLifecycle()
+    val sheepCountHistory by viewModel.sheepCountHistory.collectAsStateWithLifecycle()
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -200,6 +241,7 @@ private fun MainWorkspace(
                 EntryCategory.MEDICINE_VET,
                 EntryCategory.LIVESTOCK_BUY,
                 EntryCategory.LIVESTOCK_SELL,
+                EntryCategory.SHEPHERD_SALARY,
             )
         }
     }
@@ -256,6 +298,12 @@ private fun MainWorkspace(
                         context.startActivity(Intent.createChooser(shareIntent, strings.openOrSharePdf))
                     }
                 }
+                is AppEvent.PrintPdfReady -> {
+                    val pdfFile = File(event.internalFilePath)
+                    if (pdfFile.exists()) {
+                        printPdfFile(context, pdfFile, event.jobName)
+                    }
+                }
                 is AppEvent.CsvReady -> {
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/csv"
@@ -263,6 +311,15 @@ private fun MainWorkspace(
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     context.startActivity(Intent.createChooser(shareIntent, strings.exportCsvShare))
+                }
+                is AppEvent.SheepCountFileReady -> {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, event.uri)
+                        putExtra(Intent.EXTRA_SUBJECT, event.fileName)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, strings.counterShareFileAction))
                 }
                 is AppEvent.OpenUpdateUrl -> {
                     val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(event.url))
@@ -293,6 +350,12 @@ private fun MainWorkspace(
     }
 
     val successData = (dashboardState as? UiState.Success)?.data
+    val cloudStatusLabel = when (val status = cloudSyncStatus) {
+        is CloudSyncStatus.Syncing -> strings.cloudSyncingStatus
+        is CloudSyncStatus.Synced -> strings.cloudSyncedStatus
+        is CloudSyncStatus.Error -> "${strings.cloudSyncErrorPrefix} ${status.message}"
+        CloudSyncStatus.SignedOut -> ""
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -302,9 +365,14 @@ private fun MainWorkspace(
                 navItems = allNavItems,
                 currentRoute = currentRoute,
                 pendingApprovalCount = successData?.summary?.pendingApprovalCount ?: 0,
+                openCommentsCount = successData?.reportComments?.count {
+                    it.parsedStatus() == CommentStatus.OPEN
+                } ?: 0,
                 prefs = prefs,
                 isAdminView = isAdminView,
                 isSindhi = isSindhi,
+                signedInEmail = signedInEmail,
+                cloudStatusLabel = cloudStatusLabel,
                 strings = strings,
                 onNavigate = { route ->
                     navigateToRoute(route)
@@ -342,6 +410,14 @@ private fun MainWorkspace(
                 onOpenStorageInfo = {
                     scope.launch { drawerState.close() }
                     showStorageInfoDialog = true
+                },
+                onSyncFirebaseNow = {
+                    scope.launch { drawerState.close() }
+                    viewModel.syncCloudNow(strings.cloudSyncDoneMsg, strings.cloudSyncErrorPrefix)
+                },
+                onSignOutGoogle = {
+                    scope.launch { drawerState.close() }
+                    viewModel.signOutGoogle()
                 }
             )
         }
@@ -386,6 +462,26 @@ private fun MainWorkspace(
                         },
                         actions = {
                             IconButton(
+                                onClick = {
+                                    viewModel.syncCloudNow(strings.cloudSyncDoneMsg, strings.cloudSyncErrorPrefix)
+                                },
+                                modifier = Modifier.testTag("topbar_firebase_sync")
+                            ) {
+                                Icon(
+                                    imageVector = if (cloudSyncStatus is CloudSyncStatus.Syncing) {
+                                        Icons.Rounded.CloudSync
+                                    } else {
+                                        Icons.Rounded.CloudDone
+                                    },
+                                    contentDescription = strings.firebaseSyncMenu,
+                                    tint = if (cloudSyncStatus is CloudSyncStatus.Error) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    }
+                                )
+                            }
+                            IconButton(
                                 onClick = { viewModel.lockWorkspace() },
                                 modifier = Modifier.testTag("topbar_lock_switch")
                             ) {
@@ -420,19 +516,19 @@ private fun MainWorkspace(
                 },
                 floatingActionButton = {
                     val allowFab = successData?.activeFarm != null &&
-                        (isAdminView || (currentRoute != ROUTE_SALARIES && currentRoute != ROUTE_LOANS))
+                        (isAdminView || currentRoute != ROUTE_LOANS)
                     if (allowFab) {
                         ExtendedFloatingActionButton(
                             onClick = {
                                 editingEntry = null
                                 editorInitialCategory = when (currentRoute) {
                                     ROUTE_TRADE -> EntryCategory.LIVESTOCK_BUY
-                                    ROUTE_SALARIES -> if (isAdminView) EntryCategory.SHEPHERD_ADVANCE else EntryCategory.EXPENSE
+                                    ROUTE_SALARIES -> if (isAdminView) EntryCategory.SHEPHERD_ADVANCE else EntryCategory.SHEPHERD_SALARY
                                     ROUTE_MEDICAL -> EntryCategory.MEDICINE_VET
                                     ROUTE_LOANS -> if (isAdminView) EntryCategory.LOAN_TAKEN else EntryCategory.EXPENSE
                                     else -> EntryCategory.EXPENSE
                                 }
-                                editorInitialSubCategory = null
+                                editorInitialSubCategory = if (currentRoute == ROUTE_BUDGET) ExpenseSubCategory.FEED else null
                                 prefilledShepherdOrParty = ""
                                 showEditorDialog = true
                             },
@@ -569,6 +665,9 @@ private fun MainWorkspace(
                                                 onDownloadPdf = { showPdfOptionsDialog = true },
                                                 onOpenBackupSettings = { showBackupDialog = true },
                                                 onOpenMonthlyBudgets = { showMonthlyBudgetDialog = true },
+                                                onOpenBudgetPage = { navigateToRoute(ROUTE_BUDGET) },
+                                                onOpenReports = { navigateToRoute(ROUTE_REPORTS) },
+                                                onOpenCounterPage = { navigateToRoute(ROUTE_COUNTER) },
                                                 onOpenLoansPage = { navigateToRoute(ROUTE_LOANS) },
                                                 onSaveSafetyBackupFile = {
                                                     viewModel.saveSafetyBackupToDownloadsNow(strings.autoSafetyBackupSavedMsg)
@@ -580,6 +679,68 @@ private fun MainWorkspace(
                                                 onDownloadAvailableUpdate = { url ->
                                                     viewModel.backupAndLaunchUpdate(url, strings.autoSafetyBackupSavedMsg)
                                                 }
+                                            )
+                                        }
+                                        composable(ROUTE_BUDGET) {
+                                            BudgetScreen(
+                                                entries = state.data.entries,
+                                                budgetStatus = state.data.budgetStatus,
+                                                isAdminView = isAdminView,
+                                                strings = strings,
+                                                onOpenMonthlyBudgets = { showMonthlyBudgetDialog = true },
+                                                onQuickAddFeed = { openEditorForFarmSubCategory(ExpenseSubCategory.FEED) },
+                                                onQuickAddMedVet = { openEditorForCategory(EntryCategory.MEDICINE_VET, "") },
+                                                onEditEntry = openEditorForEntry,
+                                                onApproveEntry = approveEntry,
+                                                onRejectEntry = rejectEntry,
+                                                onViewReceipt = { viewingReceiptEntry = it },
+                                            )
+                                        }
+                                        composable(ROUTE_REPORTS) {
+                                            ReportsScreen(
+                                                farm = farm,
+                                                entries = state.data.entries,
+                                                reportComments = state.data.reportComments,
+                                                isAdminView = isAdminView,
+                                                strings = strings,
+                                                onExportPdf = { filteredEntries, filteredSummary, includePending, period ->
+                                                    viewModel.generatePdfReport(
+                                                        includePending = includePending,
+                                                        customEntries = filteredEntries,
+                                                        customSummary = filteredSummary,
+                                                        periodLabel = period,
+                                                        triggerPrint = false,
+                                                    )
+                                                },
+                                                onPrintA4 = { filteredEntries, filteredSummary, includePending, period ->
+                                                    viewModel.generatePdfReport(
+                                                        includePending = includePending,
+                                                        customEntries = filteredEntries,
+                                                        customSummary = filteredSummary,
+                                                        periodLabel = period,
+                                                        triggerPrint = true,
+                                                    )
+                                                },
+                                                onEditEntry = openEditorForEntry,
+                                                onViewReceipt = { viewingReceiptEntry = it },
+                                                onSubmitComment = { entryId, entryTitleSnapshot, commentText ->
+                                                    viewModel.submitReportComment(
+                                                        entryId = entryId,
+                                                        entryTitleSnapshot = entryTitleSnapshot,
+                                                        commentText = commentText,
+                                                        savedMessage = strings.commentSubmittedMsg,
+                                                    )
+                                                },
+                                                onResolveComment = { commentId, adminResponse ->
+                                                    viewModel.resolveReportComment(
+                                                        commentId = commentId,
+                                                        adminResponse = adminResponse,
+                                                        resolvedMessage = strings.commentResolvedMsg,
+                                                    )
+                                                },
+                                                onDeleteComment = { commentId ->
+                                                    viewModel.deleteReportComment(commentId)
+                                                },
                                             )
                                         }
                                         composable(ROUTE_LEDGER) {
@@ -601,6 +762,7 @@ private fun MainWorkspace(
                                                 isAdminView = isAdminView,
                                                 strings = strings,
                                                 onAddTrade = { cat -> openEditorForCategory(cat, "") },
+                                                onOpenCounterPage = { navigateToRoute(ROUTE_COUNTER) },
                                                 onEditEntry = openEditorForEntry,
                                                 onApproveEntry = approveEntry,
                                                 onRejectEntry = rejectEntry,
@@ -616,6 +778,9 @@ private fun MainWorkspace(
                                                 onAddShepherd = { viewModel.addShepherd(it) },
                                                 onPayShepherd = { shepherdName ->
                                                     openEditorForCategory(EntryCategory.SHEPHERD_ADVANCE, shepherdName)
+                                                },
+                                                onAddSalary = {
+                                                    openEditorForCategory(EntryCategory.SHEPHERD_SALARY, "")
                                                 },
                                                 onEditEntry = openEditorForEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it }
@@ -645,6 +810,26 @@ private fun MainWorkspace(
                                                 onAddLoan = openEditorForCategory,
                                                 onEditEntry = openEditorForEntry,
                                                 onViewReceipt = { viewingReceiptEntry = it }
+                                            )
+                                        }
+                                        composable(ROUTE_COUNTER) {
+                                            SheepCounterScreen(
+                                                farm = farm,
+                                                summary = state.data.summary,
+                                                history = sheepCountHistory,
+                                                strings = strings,
+                                                onPersistCameraPhoto = { uri -> viewModel.persistCounterCameraPhoto(uri) },
+                                                onSaveCountResult = { count, note, photoPath ->
+                                                    viewModel.saveSheepCountResult(
+                                                        countedSheep = count,
+                                                        note = note,
+                                                        photoFilePath = photoPath,
+                                                        savedMsg = strings.counterSavedToast,
+                                                        errorMsg = strings.counterSaveErrorToast,
+                                                    )
+                                                },
+                                                onShareResultFile = { path -> viewModel.shareSheepCountFile(path) },
+                                                onShowMessage = { msg -> viewModel.showTransientMessage(msg) },
                                             )
                                         }
                                     }

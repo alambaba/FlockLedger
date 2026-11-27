@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.PersonAdd
@@ -208,6 +209,7 @@ fun TradeScreen(
     isAdminView: Boolean,
     strings: AppStrings,
     onAddTrade: (EntryCategory) -> Unit,
+    onOpenCounterPage: () -> Unit,
     onEditEntry: (LedgerEntry) -> Unit,
     onApproveEntry: (String) -> Unit,
     onRejectEntry: (String) -> Unit,
@@ -317,6 +319,17 @@ fun TradeScreen(
                         Text(strings.recordDeathAction, fontSize = 13.sp, lineHeight = 18.sp)
                     }
                 }
+                OutlinedButton(
+                    onClick = onOpenCounterPage,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("trade_sheep_counter_button")
+                ) {
+                    Icon(Icons.Rounded.CameraAlt, contentDescription = strings.counterPageTitle, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(strings.counterPageTitle, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -352,6 +365,7 @@ fun SalariesScreen(
     strings: AppStrings,
     onAddShepherd: (String) -> Unit,
     onPayShepherd: (String) -> Unit,
+    onAddSalary: () -> Unit,
     onEditEntry: (LedgerEntry) -> Unit,
     onViewReceipt: (LedgerEntry) -> Unit,
 ) {
@@ -424,16 +438,30 @@ fun SalariesScreen(
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Rounded.Lock, contentDescription = strings.adminOnlyTag)
-                        Text(
-                            text = "${strings.adminOnlyTag}: ${strings.caretakerRestrictedHint}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Rounded.Lock, contentDescription = strings.adminOnlyTag)
+                            Text(
+                                text = strings.caretakerRestrictedHint,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Button(
+                            onClick = onAddSalary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("salaries_caretaker_add_salary_button")
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text(strings.catShepherdSalary, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

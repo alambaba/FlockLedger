@@ -13,10 +13,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ListAlt
+import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountBalance
-import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.Assessment
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
@@ -51,13 +55,6 @@ import androidx.compose.ui.unit.sp
 import com.example.data.preferences.UserPreferences
 import com.example.i18n.AppStrings
 
-const val ROUTE_FUNDFLOW = "fundflow"
-const val ROUTE_LEDGER = "ledger"
-const val ROUTE_TRADE = "trade"
-const val ROUTE_SALARIES = "salaries"
-const val ROUTE_MEDICAL = "medical"
-const val ROUTE_LOANS = "loans"
-
 data class FlockNavItem(
     val route: String,
     val label: String,
@@ -65,15 +62,24 @@ data class FlockNavItem(
 )
 
 fun buildBottomNavItems(strings: AppStrings): List<FlockNavItem> = listOf(
-    FlockNavItem(ROUTE_FUNDFLOW, strings.navFundflow, Icons.Rounded.AccountBalanceWallet),
+    FlockNavItem(ROUTE_FUNDFLOW, strings.navFundflow, Icons.Rounded.Dashboard),
     FlockNavItem(ROUTE_LEDGER, strings.navLedger, Icons.AutoMirrored.Rounded.ListAlt),
     FlockNavItem(ROUTE_TRADE, strings.navTrade, Icons.Rounded.SwapHoriz),
     FlockNavItem(ROUTE_SALARIES, strings.navSalaries, Icons.Rounded.Payments),
     FlockNavItem(ROUTE_MEDICAL, strings.navMedical, Icons.Rounded.MedicalServices),
 )
 
-fun buildAllNavItems(strings: AppStrings): List<FlockNavItem> =
-    buildBottomNavItems(strings) + FlockNavItem(ROUTE_LOANS, strings.navLoans, Icons.Rounded.AccountBalance)
+fun buildAllNavItems(strings: AppStrings): List<FlockNavItem> = listOf(
+    FlockNavItem(ROUTE_FUNDFLOW, strings.navFundflow, Icons.Rounded.Dashboard),
+    FlockNavItem(ROUTE_LEDGER, strings.navLedger, Icons.AutoMirrored.Rounded.ListAlt),
+    FlockNavItem(ROUTE_TRADE, strings.navTrade, Icons.Rounded.SwapHoriz),
+    FlockNavItem(ROUTE_SALARIES, strings.navSalaries, Icons.Rounded.Payments),
+    FlockNavItem(ROUTE_MEDICAL, strings.navMedical, Icons.Rounded.MedicalServices),
+    FlockNavItem(ROUTE_BUDGET, strings.navBudget, Icons.Rounded.Tune),
+    FlockNavItem(ROUTE_REPORTS, strings.navReports, Icons.Rounded.Assessment),
+    FlockNavItem(ROUTE_COUNTER, strings.navCounter, Icons.Rounded.CameraAlt),
+    FlockNavItem(ROUTE_LOANS, strings.navLoans, Icons.Rounded.AccountBalance),
+)
 
 @Composable
 fun FlockBottomNavBar(
@@ -151,9 +157,12 @@ fun FlockDrawerSheetContent(
     navItems: List<FlockNavItem>,
     currentRoute: String,
     pendingApprovalCount: Int,
+    openCommentsCount: Int,
     prefs: UserPreferences,
     isAdminView: Boolean,
     isSindhi: Boolean,
+    signedInEmail: String?,
+    cloudStatusLabel: String,
     strings: AppStrings,
     onNavigate: (String) -> Unit,
     onSwitchUserLock: () -> Unit,
@@ -165,6 +174,8 @@ fun FlockDrawerSheetContent(
     onOpenMonthlyBudgets: () -> Unit,
     onOpenFarmSettings: () -> Unit,
     onOpenStorageInfo: () -> Unit,
+    onSyncFirebaseNow: () -> Unit,
+    onSignOutGoogle: () -> Unit,
 ) {
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.surface
@@ -209,6 +220,13 @@ fun FlockDrawerSheetContent(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
+                    if (!signedInEmail.isNullOrBlank()) {
+                        Text(
+                            text = "${strings.googleAccountConnected} $signedInEmail ($cloudStatusLabel)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                        )
+                    }
                 }
             }
 
@@ -216,11 +234,16 @@ fun FlockDrawerSheetContent(
 
             // Primary Navigation Destinations inside Drawer (includes Loans page)
             navItems.forEach { item ->
+                val badgeCount = when {
+                    isAdminView && pendingApprovalCount > 0 && item.route == ROUTE_FUNDFLOW -> pendingApprovalCount
+                    openCommentsCount > 0 && item.route == ROUTE_REPORTS -> openCommentsCount
+                    else -> 0
+                }
                 NavigationDrawerItem(
                     icon = { Icon(item.icon, contentDescription = item.label) },
                     label = { Text(item.label) },
-                    badge = if (isAdminView && pendingApprovalCount > 0 && item.route == ROUTE_FUNDFLOW) {
-                        { Badge { Text(pendingApprovalCount.toString()) } }
+                    badge = if (badgeCount > 0) {
+                        { Badge { Text(badgeCount.toString()) } }
                     } else null,
                     selected = currentRoute == item.route,
                     onClick = { onNavigate(item.route) },
@@ -328,6 +351,24 @@ fun FlockDrawerSheetContent(
                 onClick = onOpenStorageInfo,
                 modifier = Modifier.testTag("drawer_storage_info_button")
             )
+
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Rounded.CloudSync, contentDescription = strings.firebaseSyncMenu) },
+                label = { Text(strings.firebaseSyncMenu) },
+                selected = false,
+                onClick = onSyncFirebaseNow,
+                modifier = Modifier.testTag("drawer_firebase_sync_button")
+            )
+
+            if (!signedInEmail.isNullOrBlank()) {
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = strings.firebaseSignOutAction) },
+                    label = { Text(strings.firebaseSignOutAction) },
+                    selected = false,
+                    onClick = onSignOutGoogle,
+                    modifier = Modifier.testTag("drawer_google_signout_button")
+                )
+            }
         }
     }
 }

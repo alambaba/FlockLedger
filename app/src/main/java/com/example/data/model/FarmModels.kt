@@ -56,6 +56,16 @@ enum class ApprovalStatus {
     }
 }
 
+enum class CommentStatus {
+    OPEN,
+    RESOLVED;
+
+    companion object {
+        fun fromRaw(raw: String?): CommentStatus =
+            entries.firstOrNull { it.name == raw } ?: OPEN
+    }
+}
+
 data class Farm(
     val id: String = "",
     val ownerId: String = "local_admin",
@@ -88,6 +98,21 @@ data class LedgerEntry(
     fun parsedSubCategory(): ExpenseSubCategory? = ExpenseSubCategory.fromRaw(subCategory)
     fun parsedApprovalStatus(): ApprovalStatus = ApprovalStatus.fromRaw(approvalStatus)
     fun parsedPaymentMethod(): PaymentMethod = PaymentMethod.fromRaw(paymentMethod)
+}
+
+data class ReportComment(
+    val id: String = "",
+    val farmId: String = "",
+    val entryId: String? = null,
+    val entryTitleSnapshot: String = "",
+    val authorRole: String = "Caretaker",
+    val commentText: String = "",
+    val status: String = CommentStatus.OPEN.name,
+    val adminResponse: String = "",
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val updatedAtMillis: Long = System.currentTimeMillis(),
+) {
+    fun parsedStatus(): CommentStatus = CommentStatus.fromRaw(status)
 }
 
 data class ShepherdLedgerSummary(
@@ -517,4 +542,101 @@ fun computeMonthlyBudgetStatus(
         medVetBudget = evaluate(medVetSpent, medVetCap),
     )
 }
+
+fun isCashInflowCategory(cat: EntryCategory): Boolean =
+    cat == EntryCategory.OWNER_FUNDS ||
+        cat == EntryCategory.LIVESTOCK_SELL ||
+        cat == EntryCategory.OTHER_INCOME ||
+        cat == EntryCategory.LOAN_TAKEN ||
+        cat == EntryCategory.LOAN_RECOVER ||
+        cat == EntryCategory.SHEPHERD_ADVANCE_RECOVERY
+
+fun computeCashRunningBalances(entries: List<LedgerEntry>): Map<String, Double> {
+    val chronological = entries.sortedWith(
+        compareBy<LedgerEntry> { it.entryDateMillis }.thenBy { it.createdAtMillis }.thenBy { it.id }
+    )
+    val result = LinkedHashMap<String, Double>(chronological.size)
+    var running = 0.0
+    for (entry in chronological) {
+        val cat = entry.parsedCategory()
+        val approved = entry.parsedApprovalStatus() == ApprovalStatus.APPROVED
+        val isCash = entry.parsedPaymentMethod() == PaymentMethod.CASH
+        if (approved && isCash && cat != EntryCategory.LIVESTOCK_DEATH) {
+            if (isCashInflowCategory(cat)) {
+                running += entry.amount
+            } else {
+                running -= entry.amount
+            }
+        }
+        result[entry.id] = running
+    }
+    return result
+}
+
+enum class ReportFilterMode {
+    MONTHLY,
+    YEARLY,
+    CATEGORY,
+    CUSTOM,
+}
+
+fun filterLedgerEntriesForReport(
+    entries: List<LedgerEntry>,
+    mode: ReportFilterMode,
+    year: Int,
+    monthZeroBased: Int,
+    filterCategory: EntryCategory? = null,
+    filterSubCategory: ExpenseSubCategory? = null,
+    customStartMillis: Long? = null,
+    customEndMillis: Long? = null,
+    includePending: Boolean = true,
+): List<LedgerEntry> {
+    val entryCal = java.util.Calendar.getInstance()
+    val startBound = customStartMillis?.let {
+        java.util.Calendar.getInstance().apply {
+            timeInMillis = it
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val endBound = customEndMillis?.let {
+        java.util.Calendar.getInstance().apply {
+            timeInMillis = it
+            set(java.util.Calendar.HOUR_OF_DAY, 23)
+            set(java.util.Calendar.MINUTE, 59)
+            set(java.util.Calendar.SECOND, 59)
+            set(java.util.Calendar.MILLISECOND, 999)
+        }.timeInMillis
+    }
+
+    return entries.filter { entry ->
+        val status = entry.parsedApprovalStatus()
+        if (status == ApprovalStatus.REJECTED) return@filter false
+        if (!includePending && status != ApprovalStatus.APPROVED) return@filter false
+
+        entryCal.timeInMillis = entry.entryDateMillis
+        val ey = entryCal.get(java.util.Calendar.YEAR)
+        val em = entryCal.get(java.util.Calendar.MONTH)
+
+        when (mode) {
+            ReportFilterMode.MONTHLY -> ey == year && em == monthZeroBased
+            ReportFilterMode.YEARLY -> ey == year
+            ReportFilterMode.CATEGORY -> {
+                val catOk = filterCategory == null || entry.parsedCategory() == filterCategory
+                val subOk = filterSubCategory == null ||
+                    (entry.parsedCategory() == EntryCategory.EXPENSE &&
+                        (entry.parsedSubCategory() ?: ExpenseSubCategory.OTHER) == filterSubCategory)
+                catOk && subOk
+            }
+            ReportFilterMode.CUSTOM -> {
+                val afterStart = startBound == null || entry.entryDateMillis >= startBound
+                val beforeEnd = endBound == null || entry.entryDateMillis <= endBound
+                afterStart && beforeEnd
+            }
+        }
+    }
+}
+
 

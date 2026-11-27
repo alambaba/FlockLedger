@@ -9,6 +9,8 @@ import com.example.BuildConfig
 import com.example.data.backup.AvailableAppUpdate
 import com.example.data.backup.BackupExecutionResult
 import com.example.data.backup.BackupManager
+import com.example.data.counter.SheepCountRecord
+import com.example.data.counter.SheepCountStorageManager
 import com.example.data.model.ApprovalStatus
 import com.example.data.model.BudgetAlertLevel
 import com.example.data.model.EntryCategory
@@ -18,6 +20,7 @@ import com.example.data.model.FarmSummary
 import com.example.data.model.LedgerEntry
 import com.example.data.model.MonthlyBudgetStatus
 import com.example.data.model.PaymentMethod
+import com.example.data.model.ReportComment
 import com.example.data.model.computeFarmSummary
 import com.example.data.model.computeMonthlyBudgetStatus
 import com.example.data.pdf.GeneratedPdfResult
@@ -25,10 +28,16 @@ import com.example.data.pdf.PdfReportGenerator
 import com.example.data.preferences.AppPreferencesRepository
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserRole
+import com.example.data.remote.CloudSyncStatus
+import com.example.data.remote.FirestoreSyncRepository
+import com.example.data.remote.GoogleAuthManager
+import com.example.data.remote.GoogleSignInCancelledException
 import com.example.data.repository.FlockRepository
 import com.example.i18n.AppLanguage
+import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -37,7 +46,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -54,7 +65,9 @@ sealed interface UiState<out T> {
 sealed interface AppEvent {
     data class ShowMessage(val message: String) : AppEvent
     data class PdfReady(val result: GeneratedPdfResult) : AppEvent
+    data class PrintPdfReady(val internalFilePath: String, val jobName: String) : AppEvent
     data class CsvReady(val uri: Uri) : AppEvent
+    data class SheepCountFileReady(val uri: Uri, val fileName: String) : AppEvent
     data class AutoBackupCompleted(val result: BackupExecutionResult) : AppEvent
     data class OpenUpdateUrl(val url: String) : AppEvent
     data class BudgetThresholdAlert(
@@ -76,6 +89,7 @@ data class DashboardData(
     val entries: List<LedgerEntry>,
     val summary: FarmSummary,
     val budgetStatus: MonthlyBudgetStatus,
+    val reportComments: List<ReportComment> = emptyList(),
 )
 
 class FlockViewModel(
@@ -83,6 +97,9 @@ class FlockViewModel(
     private val prefsRepository: AppPreferencesRepository,
     private val backupManager: BackupManager,
     private val pdfGenerator: PdfReportGenerator,
+    private val authManager: GoogleAuthManager,
+    private val firestoreSync: FirestoreSyncRepository,
+    private val sheepCountManager: SheepCountStorageManager,
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferences> = prefsRepository.preferencesFlow
@@ -91,6 +108,21 @@ class FlockViewModel(
             started = SharingStarted.WhileSubscribed(5000L),
             initialValue = UserPreferences()
         )
+
+    val authUser: StateFlow<FirebaseUser?> = authManager.authUserFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000L),
+            initialValue = authManager.auth.currentUser
+        )
+
+    val cloudSyncStatus: StateFlow<CloudSyncStatus> = firestoreSync.syncStatus
+
+    private val _isSigningIn = MutableStateFlow(false)
+    val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
+
+    private val _signInError = MutableStateFlow<String?>(null)
+    val signInError: StateFlow<String?> = _signInError.asStateFlow()
 
     private val _activeRole = MutableStateFlow<UserRole?>(null)
     val activeRole: StateFlow<UserRole?> = _activeRole.asStateFlow()
@@ -104,8 +136,13 @@ class FlockViewModel(
     private val _availableUpdate = MutableStateFlow<AvailableAppUpdate?>(null)
     val availableUpdate: StateFlow<AvailableAppUpdate?> = _availableUpdate.asStateFlow()
 
+    private val _sheepCountHistory = MutableStateFlow<List<SheepCountRecord>>(emptyList())
+    val sheepCountHistory: StateFlow<List<SheepCountRecord>> = _sheepCountHistory.asStateFlow()
+
     private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 8)
     val events: SharedFlow<AppEvent> = _events.asSharedFlow()
+
+    private var silentSignInAttempted = false
 
     private val farmsState: StateFlow<UiState<List<Farm>>> = repository.observeFarms()
         .map<List<Farm>, UiState<List<Farm>>> { UiState.Success(it) }
@@ -149,23 +186,26 @@ class FlockViewModel(
                                 )
                             )
                         } else {
-                            repository.observeFarmEntries(activeFarm.id)
-                                .map<List<LedgerEntry>, UiState<DashboardData>> { entries ->
-                                    UiState.Success(
-                                        DashboardData(
-                                            farms = farms,
-                                            activeFarm = activeFarm,
+                            combine(
+                                repository.observeFarmEntries(activeFarm.id),
+                                repository.observeCommentsForFarm(activeFarm.id)
+                            ) { entries, comments ->
+                                UiState.Success(
+                                    DashboardData(
+                                        farms = farms,
+                                        activeFarm = activeFarm,
+                                        entries = entries,
+                                        summary = computeFarmSummary(activeFarm, entries),
+                                        budgetStatus = computeMonthlyBudgetStatus(
                                             entries = entries,
-                                            summary = computeFarmSummary(activeFarm, entries),
-                                            budgetStatus = computeMonthlyBudgetStatus(
-                                                entries = entries,
-                                                feedCap = prefs.monthlyFeedBudgetCap,
-                                                medVetCap = prefs.monthlyMedVetBudgetCap,
-                                                alertThresholdPercent = prefs.budgetAlertThresholdPercent,
-                                            ),
-                                        )
+                                            feedCap = prefs.monthlyFeedBudgetCap,
+                                            medVetCap = prefs.monthlyMedVetBudgetCap,
+                                            alertThresholdPercent = prefs.budgetAlertThresholdPercent,
+                                        ),
+                                        reportComments = comments,
                                     )
-                                }
+                                ) as UiState<DashboardData>
+                            }
                                 .catch { error ->
                                     if (error is CancellationException) throw error
                                     Log.w(TAG, "Error observing entries", error)
@@ -208,6 +248,105 @@ class FlockViewModel(
                     currentVersionName = currentName,
                 )
             }
+            refreshSheepCountHistory()
+        }
+
+        // Auth-gated Firestore sync & realtime listeners: automatically start on sign-in and tear down on sign-out
+        viewModelScope.launch {
+            authUser
+                .map { it?.uid }
+                .distinctUntilChanged()
+                .collectLatest { uid ->
+                    val currentUser = authManager.auth.currentUser
+                    if (uid == null || currentUser == null) {
+                        firestoreSync.setSignedOut()
+                        return@collectLatest
+                    }
+                    repository.ensureDefaultFarm()
+                    repository.syncWithCloud(currentUser)
+                    coroutineScope {
+                        launch {
+                            repository.observeRemoteFarms(uid)?.collect { remoteFarms ->
+                                repository.mergeRemoteFarms(remoteFarms)
+                            }
+                        }
+                        launch {
+                            combine(
+                                farmsState.map { (it as? UiState.Success)?.data ?: emptyList() },
+                                preferences.map { it.selectedFarmId }
+                            ) { farms, selectedId ->
+                                farms.firstOrNull { it.id == selectedId }?.id ?: farms.firstOrNull()?.id
+                            }
+                                .distinctUntilChanged()
+                                .collectLatest { farmId ->
+                                    if (farmId.isNullOrBlank()) return@collectLatest
+                                    coroutineScope {
+                                        launch {
+                                            repository.observeRemoteEntries(uid, farmId)?.collect { entries ->
+                                                repository.mergeRemoteEntries(entries)
+                                            }
+                                        }
+                                        launch {
+                                            repository.observeRemoteComments(uid, farmId)?.collect { comments ->
+                                                repository.mergeRemoteComments(comments)
+                                            }
+                                        }
+                                    }
+                                }
+                        }
+                    }
+                }
+        }
+    }
+
+    fun attemptSilentSignIn(activityContext: Context) {
+        if (silentSignInAttempted || authManager.auth.currentUser != null) return
+        silentSignInAttempted = true
+        viewModelScope.launch {
+            _isSigningIn.value = true
+            authManager.attemptSilentSignIn(activityContext)
+            _isSigningIn.value = false
+        }
+    }
+
+    fun signInWithGoogle(activityContext: Context) {
+        if (_isSigningIn.value) return
+        viewModelScope.launch {
+            _isSigningIn.value = true
+            _signInError.value = null
+            val res = authManager.signInWithGoogle(activityContext)
+            _isSigningIn.value = false
+            res.onFailure { err ->
+                if (err !is GoogleSignInCancelledException) {
+                    _signInError.value = err.localizedMessage ?: "Google Sign-In failed"
+                }
+            }
+        }
+    }
+
+    fun signOutGoogle() {
+        viewModelScope.launch {
+            _activeRole.value = null
+            firestoreSync.setSignedOut()
+            authManager.signOut()
+        }
+    }
+
+    fun syncCloudNow(doneMsgTemplate: String, errorPrefix: String) {
+        val user = authManager.auth.currentUser ?: return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = repository.syncWithCloud(user)
+            _isBusy.value = false
+            res.onSuccess { (uploaded, downloaded) ->
+                _events.tryEmit(
+                    AppEvent.ShowMessage(String.format(doneMsgTemplate, uploaded, downloaded))
+                )
+            }.onFailure { err ->
+                _events.tryEmit(
+                    AppEvent.ShowMessage("$errorPrefix ${err.localizedMessage ?: "Unknown error"}")
+                )
+            }
         }
     }
 
@@ -220,6 +359,7 @@ class FlockViewModel(
         viewModelScope.launch {
             _isBusy.value = true
             repository.ensureDefaultFarm()
+            authManager.auth.currentUser?.let { repository.syncWithCloud(it) }
             _isBusy.value = false
         }
     }
@@ -304,12 +444,13 @@ class FlockViewModel(
         val role = _activeRole.value ?: return
         val isAdmin = role == UserRole.ADMIN
 
-        // Caretaker can only submit EXPENSE, MEDICINE_VET, LIVESTOCK_BUY, LIVESTOCK_SELL
+        // Caretaker can submit EXPENSE, MEDICINE_VET, LIVESTOCK_BUY, LIVESTOCK_SELL, and SHEPHERD_SALARY
         val allowedForCaretaker = setOf(
             EntryCategory.EXPENSE,
             EntryCategory.MEDICINE_VET,
             EntryCategory.LIVESTOCK_BUY,
             EntryCategory.LIVESTOCK_SELL,
+            EntryCategory.SHEPHERD_SALARY,
         )
         if (!isAdmin && (editingEntry != null || category !in allowedForCaretaker)) {
             return
@@ -477,6 +618,51 @@ class FlockViewModel(
         }
     }
 
+    fun submitReportComment(
+        entryId: String?,
+        entryTitleSnapshot: String,
+        commentText: String,
+        savedMessage: String,
+    ) {
+        val currentData = (dashboardState.value as? UiState.Success)?.data ?: return
+        val farm = currentData.activeFarm ?: return
+        val role = _activeRole.value ?: return
+        val roleName = if (role == UserRole.ADMIN) "Admin" else "Caretaker"
+        viewModelScope.launch {
+            val res = repository.addReportComment(
+                farmId = farm.id,
+                entryId = entryId,
+                entryTitleSnapshot = entryTitleSnapshot,
+                authorRole = roleName,
+                commentText = commentText,
+            )
+            res.onSuccess {
+                _events.tryEmit(AppEvent.ShowMessage(savedMessage))
+            }.onFailure { err ->
+                _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Comment failed"))
+            }
+        }
+    }
+
+    fun resolveReportComment(commentId: String, adminResponse: String, resolvedMessage: String) {
+        if (_activeRole.value != UserRole.ADMIN) return
+        viewModelScope.launch {
+            val res = repository.resolveReportComment(commentId, adminResponse)
+            res.onSuccess {
+                _events.tryEmit(AppEvent.ShowMessage(resolvedMessage))
+            }.onFailure { err ->
+                _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "Update failed"))
+            }
+        }
+    }
+
+    fun deleteReportComment(commentId: String) {
+        if (_activeRole.value != UserRole.ADMIN) return
+        viewModelScope.launch {
+            repository.deleteReportComment(commentId)
+        }
+    }
+
     fun addShepherd(name: String) {
         if (_activeRole.value != UserRole.ADMIN) return
         val farm = (dashboardState.value as? UiState.Success)?.data?.activeFarm ?: return
@@ -634,22 +820,40 @@ class FlockViewModel(
         _events.tryEmit(AppEvent.AutoBackupCompleted(result))
     }
 
-    fun generatePdfReport(includePending: Boolean = false) {
+    fun generatePdfReport(
+        includePending: Boolean = false,
+        customEntries: List<LedgerEntry>? = null,
+        customSummary: FarmSummary? = null,
+        periodLabel: String = "",
+        triggerPrint: Boolean = false,
+    ) {
         val data = (dashboardState.value as? UiState.Success)?.data ?: return
         val farm = data.activeFarm ?: return
         val isSindhi = preferences.value.language == AppLanguage.SINDHI
+        val targetEntries = customEntries ?: data.entries
+        val targetSummary = customSummary ?: data.summary
         viewModelScope.launch {
             _isBusy.value = true
             val res = pdfGenerator.generateSummaryPdf(
                 farm = farm,
-                summary = data.summary,
-                entries = data.entries,
+                summary = targetSummary,
+                entries = targetEntries,
                 isSindhi = isSindhi,
                 includePending = includePending,
+                periodLabel = periodLabel,
             )
             _isBusy.value = false
             res.onSuccess { pdfResult ->
-                _events.tryEmit(AppEvent.PdfReady(pdfResult))
+                if (triggerPrint && pdfResult.internalFilePath.isNotBlank()) {
+                    val jobTitle = if (periodLabel.isNotBlank()) {
+                        "${farm.name.ifBlank { "FlockLedger" }} - $periodLabel"
+                    } else {
+                        "${farm.name.ifBlank { "FlockLedger" }} Report"
+                    }
+                    _events.tryEmit(AppEvent.PrintPdfReady(pdfResult.internalFilePath, jobTitle))
+                } else {
+                    _events.tryEmit(AppEvent.PdfReady(pdfResult))
+                }
             }.onFailure { err ->
                 _events.tryEmit(AppEvent.ShowMessage(err.localizedMessage ?: "PDF error"))
             }
@@ -670,16 +874,72 @@ class FlockViewModel(
         }
     }
 
+    fun refreshSheepCountHistory() {
+        viewModelScope.launch {
+            val selectedFarmId = (dashboardState.value as? UiState.Success)?.data?.activeFarm?.id
+            _sheepCountHistory.value = sheepCountManager.loadHistory(selectedFarmId)
+        }
+    }
+
+    suspend fun persistCounterCameraPhoto(uri: Uri): String? {
+        return sheepCountManager.copyCameraPhotoToPersistentFile(uri)
+    }
+
+    fun saveSheepCountResult(
+        countedSheep: Int,
+        note: String,
+        photoFilePath: String?,
+        savedMsg: String,
+        errorMsg: String,
+    ) {
+        val data = (dashboardState.value as? UiState.Success)?.data ?: return
+        val farm = data.activeFarm ?: return
+        val recordedBy = if (_activeRole.value == UserRole.ADMIN) "Admin" else "Caretaker"
+        viewModelScope.launch {
+            _isBusy.value = true
+            val res = sheepCountManager.saveCountResultToFile(
+                farmId = farm.id,
+                farmName = farm.name,
+                countedSheep = countedSheep,
+                expectedSheep = data.summary.currentFlockCount.toInt(),
+                note = note,
+                photoFilePath = photoFilePath,
+                recordedBy = recordedBy,
+            )
+            _isBusy.value = false
+            res.onSuccess {
+                _sheepCountHistory.value = sheepCountManager.loadHistory(farm.id)
+                _events.tryEmit(AppEvent.ShowMessage(savedMsg))
+            }.onFailure {
+                _events.tryEmit(AppEvent.ShowMessage(errorMsg))
+            }
+        }
+    }
+
+    fun shareSheepCountFile(filePath: String) {
+        val uri = sheepCountManager.getShareUri(filePath) ?: return
+        _events.tryEmit(AppEvent.SheepCountFileReady(uri, java.io.File(filePath).name))
+    }
+
+    fun showTransientMessage(message: String) {
+        _events.tryEmit(AppEvent.ShowMessage(message))
+    }
+
     companion object {
         private const val TAG = "FlockVM"
 
         fun createDependencies(context: Context): QuadrupleDeps {
             val appCtx = context.applicationContext
+            val authManager = GoogleAuthManager(appCtx)
+            val firestoreSync = FirestoreSyncRepository(appCtx, authManager.auth)
             return QuadrupleDeps(
-                repository = FlockRepository(appCtx),
+                repository = FlockRepository(appCtx, firestoreSync),
                 prefsRepository = AppPreferencesRepository(appCtx),
                 backupManager = BackupManager(appCtx),
                 pdfGenerator = PdfReportGenerator(appCtx),
+                authManager = authManager,
+                firestoreSync = firestoreSync,
+                sheepCountManager = SheepCountStorageManager(appCtx),
             )
         }
     }
@@ -690,4 +950,7 @@ data class QuadrupleDeps(
     val prefsRepository: AppPreferencesRepository,
     val backupManager: BackupManager,
     val pdfGenerator: PdfReportGenerator,
+    val authManager: GoogleAuthManager,
+    val firestoreSync: FirestoreSyncRepository,
+    val sheepCountManager: SheepCountStorageManager,
 )

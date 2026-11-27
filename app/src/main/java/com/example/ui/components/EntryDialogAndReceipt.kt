@@ -333,9 +333,10 @@ fun EntryEditorDialog(
                             ) { Text(strings.deathOption) }
                         }
                     }
-                } else if (category == EntryCategory.SHEPHERD_ADVANCE ||
-                    category == EntryCategory.SHEPHERD_ADVANCE_RECOVERY ||
-                    category == EntryCategory.SHEPHERD_SALARY
+                } else if ((category == EntryCategory.SHEPHERD_ADVANCE ||
+                        category == EntryCategory.SHEPHERD_ADVANCE_RECOVERY ||
+                        category == EntryCategory.SHEPHERD_SALARY) &&
+                    EntryCategory.SHEPHERD_ADVANCE in allowedCategories
                 ) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         SegmentedButton(

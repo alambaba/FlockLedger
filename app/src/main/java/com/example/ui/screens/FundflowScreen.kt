@@ -25,14 +25,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Assessment
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.MedicalServices
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -105,6 +109,9 @@ fun FundflowScreen(
     onDownloadPdf: () -> Unit,
     onOpenBackupSettings: () -> Unit,
     onOpenMonthlyBudgets: () -> Unit,
+    onOpenBudgetPage: () -> Unit,
+    onOpenReports: () -> Unit,
+    onOpenCounterPage: () -> Unit,
     onOpenLoansPage: () -> Unit,
     onSaveSafetyBackupFile: () -> Unit,
     onRestoreBackupFile: () -> Unit,
@@ -121,6 +128,9 @@ fun FundflowScreen(
             availableUpdate = availableUpdate,
             onQuickAddCategory = onQuickAddCategory,
             onQuickAddFarmSubCategory = onQuickAddFarmSubCategory,
+            onOpenReports = onOpenReports,
+            onOpenBudgetPage = onOpenBudgetPage,
+            onOpenCounterPage = onOpenCounterPage,
             onViewReceipt = onViewReceipt,
             onSaveSafetyBackupFile = onSaveSafetyBackupFile,
             onDismissPostUpdateBanner = onDismissPostUpdateBanner,
@@ -167,7 +177,7 @@ fun FundflowScreen(
                 MonthlyBudgetAlertBanner(
                     status = budgetStatus,
                     strings = strings,
-                    onEditBudgets = onOpenMonthlyBudgets,
+                    onEditBudgets = onOpenBudgetPage,
                     modifier = Modifier.widthIn(max = 640.dp)
                 )
             }
@@ -286,29 +296,79 @@ fun FundflowScreen(
             }
         }
 
-        // Action Buttons — well-sized with multi-line friendly labels (no "..." truncation!)
+        // Highlighted Bold Report & Action Buttons on First Page
         item {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 640.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
+                        onClick = onOpenReports,
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("fundflow_open_reports_bold_button")
+                    ) {
+                        Icon(Icons.Rounded.Assessment, contentDescription = strings.navReports, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = strings.openReportsBoldBtn,
+                            fontSize = 14.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Button(
                         onClick = onDownloadPdf,
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                            contentColor = MaterialTheme.colorScheme.onTertiary
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("fundflow_pdf_button")
                     ) {
-                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = strings.downloadPdfReport, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = strings.downloadPdfReport, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = strings.downloadPdfReport,
+                            fontSize = 14.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onOpenBudgetPage,
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("fundflow_budget_page_button")
+                    ) {
+                        Icon(Icons.Rounded.Tune, contentDescription = strings.navBudget, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(6.dp))
-                        Text(strings.downloadPdfReport, fontSize = 13.sp, lineHeight = 18.sp)
+                        Text(strings.navBudget, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = onOpenBackupSettings,
@@ -356,6 +416,24 @@ fun FundflowScreen(
                         Spacer(Modifier.size(6.dp))
                         Text(strings.navLoans, fontSize = 13.sp, lineHeight = 18.sp)
                     }
+                }
+
+                OutlinedButton(
+                    onClick = onOpenCounterPage,
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("fundflow_sheep_counter_button")
+                ) {
+                    Icon(Icons.Rounded.CameraAlt, contentDescription = strings.counterPageTitle, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        text = strings.counterPageTitle,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -592,6 +670,9 @@ private fun CaretakerRestrictedDashboard(
     availableUpdate: AvailableAppUpdate?,
     onQuickAddCategory: (EntryCategory) -> Unit,
     onQuickAddFarmSubCategory: (ExpenseSubCategory) -> Unit,
+    onOpenReports: () -> Unit,
+    onOpenBudgetPage: () -> Unit,
+    onOpenCounterPage: () -> Unit,
     onViewReceipt: (LedgerEntry) -> Unit,
     onSaveSafetyBackupFile: () -> Unit,
     onDismissPostUpdateBanner: () -> Unit,
@@ -629,7 +710,7 @@ private fun CaretakerRestrictedDashboard(
                 MonthlyBudgetAlertBanner(
                     status = budgetStatus,
                     strings = strings,
-                    onEditBudgets = {},
+                    onEditBudgets = onOpenBudgetPage,
                     modifier = Modifier.widthIn(max = 620.dp)
                 )
             }
@@ -644,7 +725,7 @@ private fun CaretakerRestrictedDashboard(
             ) {
                 Column(
                     modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
                         text = farmName,
@@ -663,11 +744,48 @@ private fun CaretakerRestrictedDashboard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.88f)
                     )
+                    Button(
+                        onClick = onOpenReports,
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("caretaker_open_reports_bold_button")
+                    ) {
+                        Icon(Icons.Rounded.Assessment, contentDescription = strings.navReports, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = strings.openReportsBoldBtn,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onOpenCounterPage,
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("caretaker_sheep_counter_button")
+                    ) {
+                        Icon(Icons.Rounded.CameraAlt, contentDescription = strings.counterPageTitle, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = strings.counterPageTitle,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
         }
 
-        // Caretaker can ONLY submit Expenses, Medicine, and Livestock Buy/Sell
+        // Caretaker can submit Expenses, Medicine, Livestock Buy/Sell, and Shepherd Salary
         item {
             Column(
                 modifier = Modifier
@@ -698,15 +816,29 @@ private fun CaretakerRestrictedDashboard(
                             .testTag("quick_medicine_tile")
                     )
                 }
-                CaretakerActionCard(
-                    title = strings.quickLivestockTrade,
-                    icon = Icons.Rounded.SwapHoriz,
-                    accent = LivestockBuyTeal,
-                    onClick = { onQuickAddCategory(EntryCategory.LIVESTOCK_BUY) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("quick_trade_tile")
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CaretakerActionCard(
+                        title = strings.quickLivestockTrade,
+                        icon = Icons.Rounded.SwapHoriz,
+                        accent = LivestockBuyTeal,
+                        onClick = { onQuickAddCategory(EntryCategory.LIVESTOCK_BUY) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("quick_trade_tile")
+                    )
+                    CaretakerActionCard(
+                        title = strings.catShepherdSalary,
+                        icon = Icons.Rounded.Payments,
+                        accent = ShepherdSalaryIndigo,
+                        onClick = { onQuickAddCategory(EntryCategory.SHEPHERD_SALARY) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("quick_salary_tile")
+                    )
+                }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

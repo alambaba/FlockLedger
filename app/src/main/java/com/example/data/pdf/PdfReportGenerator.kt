@@ -9,7 +9,15 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Environment
+import android.os.ParcelFileDescriptor
+import android.print.PageRange
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintDocumentInfo
+import android.print.PrintManager
 import android.provider.MediaStore
 import android.text.Layout
 import android.text.StaticLayout
@@ -34,7 +42,63 @@ data class GeneratedPdfResult(
     val shareUri: Uri,
     val fileName: String,
     val savedToDownloads: Boolean,
+    val internalFilePath: String = "",
 )
+
+fun printPdfFile(context: Context, file: File, jobName: String) {
+    val printManager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
+    val adapter = object : PrintDocumentAdapter() {
+        override fun onLayout(
+            oldAttributes: PrintAttributes?,
+            newAttributes: PrintAttributes,
+            cancellationSignal: CancellationSignal?,
+            callback: LayoutResultCallback,
+            extras: Bundle?,
+        ) {
+            if (cancellationSignal?.isCanceled == true) {
+                callback.onLayoutCancelled()
+                return
+            }
+            val info = PrintDocumentInfo.Builder(file.name)
+                .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN)
+                .build()
+            callback.onLayoutFinished(info, true)
+        }
+
+        override fun onWrite(
+            pages: Array<out PageRange>?,
+            destination: ParcelFileDescriptor,
+            cancellationSignal: CancellationSignal?,
+            callback: WriteResultCallback,
+        ) {
+            try {
+                file.inputStream().use { input ->
+                    FileOutputStream(destination.fileDescriptor).use { output ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            if (cancellationSignal?.isCanceled == true) {
+                                callback.onWriteCancelled()
+                                return
+                            }
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+                callback.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
+            } catch (e: Exception) {
+                callback.onWriteFailed(e.message)
+            }
+        }
+    }
+    val attrs = PrintAttributes.Builder()
+        .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+        .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+        .build()
+    printManager.print(jobName, adapter, attrs)
+}
 
 class PdfReportGenerator(private val context: Context) {
 
@@ -44,6 +108,7 @@ class PdfReportGenerator(private val context: Context) {
         entries: List<LedgerEntry>,
         isSindhi: Boolean,
         includePending: Boolean = false,
+        periodLabel: String = "",
     ): Result<GeneratedPdfResult> = withContext(Dispatchers.IO) {
         try {
             val renderer = PdfLayoutRenderer(
@@ -52,6 +117,7 @@ class PdfReportGenerator(private val context: Context) {
                 entries = entries,
                 isSindhi = isSindhi,
                 includePending = includePending,
+                periodLabel = periodLabel,
             )
 
             // Pass 1: compute exact total page count cleanly without creating PDF pages
@@ -93,7 +159,14 @@ class PdfReportGenerator(private val context: Context) {
                 "${context.packageName}.fileprovider",
                 internalFile
             )
-            Result.success(GeneratedPdfResult(shareUri, fileName, savedToDownloads))
+            Result.success(
+                GeneratedPdfResult(
+                    shareUri = shareUri,
+                    fileName = fileName,
+                    savedToDownloads = savedToDownloads,
+                    internalFilePath = internalFile.absolutePath,
+                )
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -105,6 +178,7 @@ class PdfReportGenerator(private val context: Context) {
         private val entries: List<LedgerEntry>,
         private val isSindhi: Boolean,
         private val includePending: Boolean,
+        private val periodLabel: String,
     ) {
         private val pageWidth = 595 // A4 width in points
         private val pageHeight = 842 // A4 height in points
@@ -280,7 +354,8 @@ class PdfReportGenerator(private val context: Context) {
             }
 
             fun drawTopBanner() {
-                canvas?.drawRect(0f, 0f, pageWidth.toFloat(), 84f, headerPaint)
+                val bannerHeight = if (periodLabel.isNotBlank()) 98f else 84f
+                canvas?.drawRect(0f, 0f, pageWidth.toFloat(), bannerHeight, headerPaint)
                 val heading = farm.name.trim().ifEmpty { "LAAR SHEEP FARM" }.uppercase(Locale.US)
                 val subtitle = if (isSindhi) {
                     "Financial & Livestock Management Report  |  مالي ۽ مال جي انتظامي رپورٽ"
@@ -295,7 +370,10 @@ class PdfReportGenerator(private val context: Context) {
                     69f,
                     subHeaderPaint
                 )
-                y = 104f
+                if (periodLabel.isNotBlank()) {
+                    canvas?.drawText("Period / Filter: $periodLabel", margin, 85f, subHeaderPaint)
+                }
+                y = bannerHeight + 20f
             }
 
             fun drawSectionHeader(title: String) {

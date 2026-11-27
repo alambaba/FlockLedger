@@ -1,0 +1,11 @@
+{
+  "firestore": {
+    "database": "ai-studio-android-flockled-6064b7dc-58e4-4756-9f41-714725968d6e",
+    "rules": "firestore.rules"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8085
+    }
+  }
+}

@@ -5,6 +5,96 @@ enum class AppLanguage(val code: String, val label: String) {
     ENGLISH("en", "English"),
 }
 
+data class BudgetStrings(
+    val monthlyBudgetsTitle: String,
+    val monthlyBudgetsMenu: String,
+    val setBudgetCapsAction: String,
+    val feedMonthlyCapLabel: String,
+    val medVetMonthlyCapLabel: String,
+    val alertThresholdLabel: String,
+    val budgetNoCapSetHint: String,
+    val budgetSpentOfCap: String,
+    val budgetRemainingLabel: String,
+    val budgetOverByLabel: String,
+    val budgetApproachingBadge: String,
+    val budgetExceededBadge: String,
+    val budgetOnTrackBadge: String,
+    val budgetSavedMsg: String,
+    val budgetCapHelperText: String,
+    val budgetApproachingAlertMsg: String,
+    val budgetExceededAlertMsg: String,
+    val budgetPageHint: String,
+    val budgetThisMonthExpenses: String,
+)
+
+data class ReportAndCommentStrings(
+    val reportsPageTitle: String,
+    val openReportsBoldBtn: String,
+    val filterMonthly: String,
+    val filterYearly: String,
+    val filterCategories: String,
+    val filterCustom: String,
+    val previousMonthAction: String,
+    val nextMonthAction: String,
+    val startDateLabel: String,
+    val endDateLabel: String,
+    val printA4Action: String,
+    val runningBalanceLabel: String,
+    val filteredCountLabel: String,
+    val reportCommentsHeading: String,
+    val sendCommentAction: String,
+    val commentPlaceholder: String,
+    val selectEntryOptional: String,
+    val generalReportComment: String,
+    val commentSubmittedMsg: String,
+    val markResolvedAction: String,
+    val editFlaggedEntryAction: String,
+    val adminReplyHint: String,
+    val commentResolvedMsg: String,
+    val openCommentsCountLabel: String,
+    val noCommentsYet: String,
+    val commentResolvedBadge: String,
+)
+
+data class FirebaseCloudStrings(
+    val firebaseSignInTitle: String,
+    val firebaseSignInSubtitle: String,
+    val continueWithGoogleAction: String,
+    val signingInLabel: String,
+    val firebaseSyncMenu: String,
+    val firebaseSignOutAction: String,
+    val cloudSyncedStatus: String,
+    val cloudSyncingStatus: String,
+    val cloudSyncDoneMsg: String,
+    val cloudSyncErrorPrefix: String,
+    val googleAccountConnected: String,
+)
+
+data class SheepCounterStrings(
+    val navCounter: String,
+    val counterPageTitle: String,
+    val counterCountLabel: String,
+    val counterExpectedFlock: String,
+    val counterVarianceLabel: String,
+    val counterMatchedLabel: String,
+    val counterResetBtn: String,
+    val counterCameraBtn: String,
+    val counterCameraPermissionDenied: String,
+    val counterTapPhotoHint: String,
+    val counterUndoMarker: String,
+    val counterClearMarkers: String,
+    val counterNoteHint: String,
+    val counterSaveToFileBtn: String,
+    val counterSavedToast: String,
+    val counterSaveErrorToast: String,
+    val counterHistoryHeading: String,
+    val counterNoHistoryYet: String,
+    val counterShareFileAction: String,
+    val counterSavedInFilesDir: String,
+    val counterSavedInDownloads: String,
+    val counterPhotoAttachedLabel: String,
+)
+
 data class AppStrings(
     val appTitle: String,
     val appSubtitle: String,
@@ -44,11 +134,13 @@ data class AppStrings(
     val autoBackupCounter: String,
     // Navigation Destinations
     val navFundflow: String,
+    val navBudget: String,
     val navLedger: String,
     val navTrade: String,
     val navSalaries: String,
     val navMedical: String,
     val navLoans: String,
+    val navReports: String,
     // Approval Workflow
     val pendingApprovalBadge: String,
     val approvedBadge: String,
@@ -245,32 +337,100 @@ data class AppStrings(
     val autoBackupTriggeredMsg: String,
     val loadingText: String,
     val retry: String,
-    // Monthly Budgets & Alerts
-    val monthlyBudgetsTitle: String,
-    val monthlyBudgetsMenu: String,
-    val setBudgetCapsAction: String,
-    val feedMonthlyCapLabel: String,
-    val medVetMonthlyCapLabel: String,
-    val alertThresholdLabel: String,
-    val budgetNoCapSetHint: String,
-    val budgetSpentOfCap: String,
-    val budgetRemainingLabel: String,
-    val budgetOverByLabel: String,
-    val budgetApproachingBadge: String,
-    val budgetExceededBadge: String,
-    val budgetOnTrackBadge: String,
-    val budgetSavedMsg: String,
-    val budgetCapHelperText: String,
-    val budgetApproachingAlertMsg: String,
-    val budgetExceededAlertMsg: String,
-)
+    val budgets: BudgetStrings,
+    val reportsGroup: ReportAndCommentStrings,
+    val firebaseGroup: FirebaseCloudStrings,
+    val counterGroup: SheepCounterStrings,
+) {
+    val monthlyBudgetsTitle: String get() = budgets.monthlyBudgetsTitle
+    val monthlyBudgetsMenu: String get() = budgets.monthlyBudgetsMenu
+    val setBudgetCapsAction: String get() = budgets.setBudgetCapsAction
+    val feedMonthlyCapLabel: String get() = budgets.feedMonthlyCapLabel
+    val medVetMonthlyCapLabel: String get() = budgets.medVetMonthlyCapLabel
+    val alertThresholdLabel: String get() = budgets.alertThresholdLabel
+    val budgetNoCapSetHint: String get() = budgets.budgetNoCapSetHint
+    val budgetSpentOfCap: String get() = budgets.budgetSpentOfCap
+    val budgetRemainingLabel: String get() = budgets.budgetRemainingLabel
+    val budgetOverByLabel: String get() = budgets.budgetOverByLabel
+    val budgetApproachingBadge: String get() = budgets.budgetApproachingBadge
+    val budgetExceededBadge: String get() = budgets.budgetExceededBadge
+    val budgetOnTrackBadge: String get() = budgets.budgetOnTrackBadge
+    val budgetSavedMsg: String get() = budgets.budgetSavedMsg
+    val budgetCapHelperText: String get() = budgets.budgetCapHelperText
+    val budgetApproachingAlertMsg: String get() = budgets.budgetApproachingAlertMsg
+    val budgetExceededAlertMsg: String get() = budgets.budgetExceededAlertMsg
+    val budgetPageHint: String get() = budgets.budgetPageHint
+    val budgetThisMonthExpenses: String get() = budgets.budgetThisMonthExpenses
+
+    val reportsPageTitle: String get() = reportsGroup.reportsPageTitle
+    val openReportsBoldBtn: String get() = reportsGroup.openReportsBoldBtn
+    val filterMonthly: String get() = reportsGroup.filterMonthly
+    val filterYearly: String get() = reportsGroup.filterYearly
+    val filterCategories: String get() = reportsGroup.filterCategories
+    val filterCustom: String get() = reportsGroup.filterCustom
+    val previousMonthAction: String get() = reportsGroup.previousMonthAction
+    val nextMonthAction: String get() = reportsGroup.nextMonthAction
+    val startDateLabel: String get() = reportsGroup.startDateLabel
+    val endDateLabel: String get() = reportsGroup.endDateLabel
+    val printA4Action: String get() = reportsGroup.printA4Action
+    val runningBalanceLabel: String get() = reportsGroup.runningBalanceLabel
+    val filteredCountLabel: String get() = reportsGroup.filteredCountLabel
+    val reportCommentsHeading: String get() = reportsGroup.reportCommentsHeading
+    val sendCommentAction: String get() = reportsGroup.sendCommentAction
+    val commentPlaceholder: String get() = reportsGroup.commentPlaceholder
+    val selectEntryOptional: String get() = reportsGroup.selectEntryOptional
+    val generalReportComment: String get() = reportsGroup.generalReportComment
+    val commentSubmittedMsg: String get() = reportsGroup.commentSubmittedMsg
+    val markResolvedAction: String get() = reportsGroup.markResolvedAction
+    val editFlaggedEntryAction: String get() = reportsGroup.editFlaggedEntryAction
+    val adminReplyHint: String get() = reportsGroup.adminReplyHint
+    val commentResolvedMsg: String get() = reportsGroup.commentResolvedMsg
+    val openCommentsCountLabel: String get() = reportsGroup.openCommentsCountLabel
+    val noCommentsYet: String get() = reportsGroup.noCommentsYet
+    val commentResolvedBadge: String get() = reportsGroup.commentResolvedBadge
+
+    val firebaseSignInTitle: String get() = firebaseGroup.firebaseSignInTitle
+    val firebaseSignInSubtitle: String get() = firebaseGroup.firebaseSignInSubtitle
+    val continueWithGoogleAction: String get() = firebaseGroup.continueWithGoogleAction
+    val signingInLabel: String get() = firebaseGroup.signingInLabel
+    val firebaseSyncMenu: String get() = firebaseGroup.firebaseSyncMenu
+    val firebaseSignOutAction: String get() = firebaseGroup.firebaseSignOutAction
+    val cloudSyncedStatus: String get() = firebaseGroup.cloudSyncedStatus
+    val cloudSyncingStatus: String get() = firebaseGroup.cloudSyncingStatus
+    val cloudSyncDoneMsg: String get() = firebaseGroup.cloudSyncDoneMsg
+    val cloudSyncErrorPrefix: String get() = firebaseGroup.cloudSyncErrorPrefix
+    val googleAccountConnected: String get() = firebaseGroup.googleAccountConnected
+
+    val navCounter: String get() = counterGroup.navCounter
+    val counterPageTitle: String get() = counterGroup.counterPageTitle
+    val counterCountLabel: String get() = counterGroup.counterCountLabel
+    val counterExpectedFlock: String get() = counterGroup.counterExpectedFlock
+    val counterVarianceLabel: String get() = counterGroup.counterVarianceLabel
+    val counterMatchedLabel: String get() = counterGroup.counterMatchedLabel
+    val counterResetBtn: String get() = counterGroup.counterResetBtn
+    val counterCameraBtn: String get() = counterGroup.counterCameraBtn
+    val counterCameraPermissionDenied: String get() = counterGroup.counterCameraPermissionDenied
+    val counterTapPhotoHint: String get() = counterGroup.counterTapPhotoHint
+    val counterUndoMarker: String get() = counterGroup.counterUndoMarker
+    val counterClearMarkers: String get() = counterGroup.counterClearMarkers
+    val counterNoteHint: String get() = counterGroup.counterNoteHint
+    val counterSaveToFileBtn: String get() = counterGroup.counterSaveToFileBtn
+    val counterSavedToast: String get() = counterGroup.counterSavedToast
+    val counterSaveErrorToast: String get() = counterGroup.counterSaveErrorToast
+    val counterHistoryHeading: String get() = counterGroup.counterHistoryHeading
+    val counterNoHistoryYet: String get() = counterGroup.counterNoHistoryYet
+    val counterShareFileAction: String get() = counterGroup.counterShareFileAction
+    val counterSavedInFilesDir: String get() = counterGroup.counterSavedInFilesDir
+    val counterSavedInDownloads: String get() = counterGroup.counterSavedInDownloads
+    val counterPhotoAttachedLabel: String get() = counterGroup.counterPhotoAttachedLabel
+}
 
 fun sindhiStrings(): AppStrings = AppStrings(
     appTitle = "رڍن جو حساب ڪتاب",
     appSubtitle = "رڍون سنڀال، خرچ ۽ مال جو کاتو",
     currencyPrefix = "PKR",
     pinSetupTitle = "ايڊمن ۽ سنڀاليندڙ جو PIN سيٽ ڪريو",
-    pinSetupSubtitle = "ايڊمن وٽ مڪمل اختيار ھوندو، جڏھن ته سنڀاليندڙ صرف خرچ ۽ مال خريد/وڪرو لکندو جيڪو ايڊمن جي منظوري کان پوءِ کاتي ۾ شامل ٿيندو.",
+    pinSetupSubtitle = "ايڊمن وٽ مڪمل اختيار ھوندو، جڏھن ته سنڀاليندڙ خرچ، مال خريد/وڪرو ۽ ڌراڙ پگھار لکي سگھندو ۽ رپورٽس تي ڪمينٽ موڪلي سگھندو.",
     adminPinLabel = "ايڊمن PIN (گھٽ ۾ گھٽ 4 انگ)",
     caretakerPinLabel = "سنڀاليندڙ PIN (الڳ 4+ انگ)",
     savePinsAction = "PIN محفوظ ڪريو ۽ شروع ڪريو",
@@ -284,7 +444,7 @@ fun sindhiStrings(): AppStrings = AppStrings(
     switchUserLock = "يوزر تبديل ڪريو / لاڪ",
     changePinsMenu = "PIN ڪوڊ تبديل ڪريو",
     pinsUpdatedMsg = "نئون PIN ڪوڊ محفوظ ٿي ويو",
-    caretakerRestrictedHint = "سنڀاليندڙ صرف خرچ ۽ مال خريد/وڪرو داخل ڪري سگھي ٿو. ايڊمن جي منظوري کان پوءِ کاتي ۾ شامل ٿيندو.",
+    caretakerRestrictedHint = "سنڀاليندڙ خرچ، علاج، مال خريد/وڪرو ۽ ڌراڙ پگھار داخل ڪري سگھي ٿو. ايڊمن جي منظوري کان پوءِ کاتي ۾ شامل ٿيندو.",
     menuTitle = "مينيو",
     languageLabel = "ٻولي تبديل ڪريو",
     switchToEnglish = "English",
@@ -300,12 +460,14 @@ fun sindhiStrings(): AppStrings = AppStrings(
     backupSettingsMenu = "آٽو بيڪ اپ (Sheet / Sia)",
     farmTeamMenu = "فارم سيٽنگ",
     autoBackupCounter = "آٽو بيڪ اپ (%d/5)",
-    navFundflow = "فندز",
-    navLedger = "کاتو",
+    navFundflow = "ڊيشبورڊ",
+    navBudget = "بجيٽ",
+    navLedger = "خرچ",
     navTrade = "واپار",
-    navSalaries = "پگھار",
+    navSalaries = "ڌراڙ کاتو",
     navMedical = "علاج",
     navLoans = "لون (قرض)",
+    navReports = "رپورٽس",
     pendingApprovalBadge = "منظوري جي انتظار ۾",
     approvedBadge = "منظور ٿيل",
     rejectedBadge = "رد ٿيل",
@@ -378,7 +540,7 @@ fun sindhiStrings(): AppStrings = AppStrings(
     subMachinery = "مشينري",
     subOther = "ٻيو خرچ",
     caretakerHeader = "سنڀاليندڙ داخلا",
-    caretakerHint = "فارم خرچ، علاج يا مال خريد/وڪرو لکو. ايڊمن جي منظوري کان پوءِ حساب ۾ شامل ٿيندو.",
+    caretakerHint = "فارم خرچ، علاج، مال خريد/وڪرو ۽ ڌراڙ پگھار لکو، يا رپورٽس ڏسي غلطي جي درستگي لاءِ ڪمينٽ موڪليو.",
     addEntryTitle = "نئين داخلا شامل ڪريو",
     editEntryTitle = "داخلا تبديل ڪريو",
     quickExpense = "فارم خرچ",
@@ -488,23 +650,92 @@ fun sindhiStrings(): AppStrings = AppStrings(
     autoBackupTriggeredMsg = "5 اينٽريون مڪمل! آٽو بيڪ اپ شروع ڪيو ويو.",
     loadingText = "ڊيٽا لوڊ پئي ٿئي...",
     retry = "ٻيھر ڪوشش",
-    monthlyBudgetsTitle = "ماھوار بجيٽ ۽ حدون",
-    monthlyBudgetsMenu = "ماھوار بجيٽ حدون",
-    setBudgetCapsAction = "حد مقرر ڪريو",
-    feedMonthlyCapLabel = "چارو ۽ داڻو (Feed) ماھوار حد",
-    medVetMonthlyCapLabel = "دوائون ۽ علاج (Med & Vet) ماھوار حد",
-    alertThresholdLabel = "خبرداري الرٽ جي حد",
-    budgetNoCapSetHint = "اڃا تائين حد مقرر نه آھي — الرٽ حاصل ڪرڻ لاءِ ماھوار حد مقرر ڪريو.",
-    budgetSpentOfCap = "ھن مھيني %s خرچ (حد %s)",
-    budgetRemainingLabel = "باقي: %s",
-    budgetOverByLabel = "حد کان وڌيڪ: %s",
-    budgetApproachingBadge = "حد جي ويجهو",
-    budgetExceededBadge = "حد کان وڌي ويو",
-    budgetOnTrackBadge = "حد اندر",
-    budgetSavedMsg = "ماھوار بجيٽ حدون محفوظ ٿي ويون",
-    budgetCapHelperText = "مھيني جي حد ختم ڪرڻ لاءِ 0 لکو يا خالي ڇڏيو.",
-    budgetApproachingAlertMsg = "خبردار: %s جو ماھوار خرچ مقرر حد جي %d%% تائين پھچي ويو آھي!",
-    budgetExceededAlertMsg = "الرٽ: %s جو ماھوار خرچ (%s) مقرر حد کان وڌي ويو آھي!",
+    budgets = BudgetStrings(
+        monthlyBudgetsTitle = "ماھوار بجيٽ ۽ حدون",
+        monthlyBudgetsMenu = "ماھوار بجيٽ حدون",
+        setBudgetCapsAction = "حد مقرر ڪريو",
+        feedMonthlyCapLabel = "چارو ۽ داڻو (Feed) ماھوار حد",
+        medVetMonthlyCapLabel = "دوائون ۽ علاج (Med & Vet) ماھوار حد",
+        alertThresholdLabel = "خبرداري الرٽ جي حد",
+        budgetNoCapSetHint = "اڃا تائين حد مقرر نه آھي — الرٽ حاصل ڪرڻ لاءِ ماھوار حد مقرر ڪريو.",
+        budgetSpentOfCap = "ھن مھيني %s خرچ (حد %s)",
+        budgetRemainingLabel = "باقي: %s",
+        budgetOverByLabel = "حد کان وڌيڪ: %s",
+        budgetApproachingBadge = "حد جي ويجهو",
+        budgetExceededBadge = "حد کان وڌي ويو",
+        budgetOnTrackBadge = "حد اندر",
+        budgetSavedMsg = "ماھوار بجيٽ حدون محفوظ ٿي ويون",
+        budgetCapHelperText = "مھيني جي حد ختم ڪرڻ لاءِ 0 لکو يا خالي ڇڏيو.",
+        budgetApproachingAlertMsg = "خبردار: %s جو ماھوار خرچ مقرر حد جي %d%% تائين پھچي ويو آھي!",
+        budgetExceededAlertMsg = "الرٽ: %s جو ماھوار خرچ (%s) مقرر حد کان وڌي ويو آھي!",
+        budgetPageHint = "ھر مھيني چارو ۽ علاج جي خرچن تي نظر رکو. جڏھن خرچ مقرر حد جي ويجھو پھچي ته فوري الرٽ ملندو.",
+        budgetThisMonthExpenses = "ھن مھيني جون چارو ۽ علاج داخلائون",
+    ),
+    reportsGroup = ReportAndCommentStrings(
+        reportsPageTitle = "رپورٽس ۽ A4 پرنٽ",
+        openReportsBoldBtn = "رپورٽس ۽ A4 پرنٽ",
+        filterMonthly = "ماھوار",
+        filterYearly = "ساليانو",
+        filterCategories = "ڪيٽيگري",
+        filterCustom = "مخصوص تاريخ",
+        previousMonthAction = "پويون",
+        nextMonthAction = "اڳيون",
+        startDateLabel = "شروعاتي تاريخ",
+        endDateLabel = "آخري تاريخ",
+        printA4Action = "A4 پرنٽ ڪريو",
+        runningBalanceLabel = "نقد بيلنس",
+        filteredCountLabel = "%d داخلائون",
+        reportCommentsHeading = "غلطي يا تبديلي لاءِ ڪمينٽس",
+        sendCommentAction = "ايڊمن کي ڪمينٽ موڪليو",
+        commentPlaceholder = "جيڪا غلطي يا تبديلي ڪرائڻي آھي ھتي لکو...",
+        selectEntryOptional = "داخلا چونڊيو (اختياري)",
+        generalReportComment = "عام رپورٽ بابت",
+        commentSubmittedMsg = "توھان جو ڪمينٽ ايڊمن ڏانھن موڪليو ويو!",
+        markResolvedAction = "درست / حل ٿيو",
+        editFlaggedEntryAction = "داخلا درست ڪريو",
+        adminReplyHint = "ايڊمن جو جواب (اختياري)",
+        commentResolvedMsg = "ڪمينٽ حل قرار ڏنو ويو",
+        openCommentsCountLabel = "%d نوان ڪمينٽ",
+        noCommentsYet = "اڃا تائين ڪو به ڪمينٽ ناهي.",
+        commentResolvedBadge = "حل ٿيل",
+    ),
+    firebaseGroup = FirebaseCloudStrings(
+        firebaseSignInTitle = "Firebase ڪلائوڊ سائن ان",
+        firebaseSignInSubtitle = "توھان جي فارم جو رڪارڊ Firebase تي محفوظ رکڻ لاءِ گوگل سان سائن ان ڪريو. موبائيل ۾ موجود پراڻو رڪارڊ مڪمل سلامت رھندو.",
+        continueWithGoogleAction = "Google سان سائن ان ڪريو",
+        signingInLabel = "سائن ان پيو ٿئي...",
+        firebaseSyncMenu = "Firebase سنڪ ھاڻي",
+        firebaseSignOutAction = "Google سائن آئوٽ",
+        cloudSyncedStatus = "Firebase تي محفوظ",
+        cloudSyncingStatus = "Firebase سنڪ پيو ٿئي...",
+        cloudSyncDoneMsg = "Firebase سنڪ مڪمل: %d اپلوڊ، %d ڊائونلوڊ.",
+        cloudSyncErrorPrefix = "Firebase سنڪ مسئلو:",
+        googleAccountConnected = "گوگل اڪائونٽ:",
+    ),
+    counterGroup = SheepCounterStrings(
+        navCounter = "رڍ ڳڻپ",
+        counterPageTitle = "رڍن جي ڳڻپ ۽ ڪيمرا",
+        counterCountLabel = "ڳڻيل رڍون",
+        counterExpectedFlock = "رجسٽر مطابق رڍون",
+        counterVarianceLabel = "فرق:",
+        counterMatchedLabel = "مڪمل برابر",
+        counterResetBtn = "ري سيٽ",
+        counterCameraBtn = "ڪيمرا سان فوٽو ڪڍو",
+        counterCameraPermissionDenied = "فوٽو ڪڍڻ لاءِ ڪيمرا جي اجازت گهربل آھي.",
+        counterTapPhotoHint = "فوٽو تي هر رڍ تي ٽيپ ڪري ڳڻپ جو نشان لڳايو",
+        counterUndoMarker = "آخري نشان هٽايو",
+        counterClearMarkers = "نشان صاف ڪريو",
+        counterNoteHint = "واڙو / هنڌ يا نوٽ لکو (اختياري)",
+        counterSaveToFileBtn = "نتيجو تاريخ ۽ وقت سان فائل ۾ محفوظ ڪريو",
+        counterSavedToast = "ڳڻپ جو نتيجو تاريخ ۽ وقت سان محفوظ ٿي ويو!",
+        counterSaveErrorToast = "ڳڻپ جي فائل محفوظ نه ٿي سگهي",
+        counterHistoryHeading = "محفوظ ڪيل ڳڻپ جون فائلون",
+        counterNoHistoryYet = "اڃا تائين ڪا به ڳڻپ محفوظ ناهي ڪئي وئي.",
+        counterShareFileAction = "فائل شيئر / کوليو",
+        counterSavedInFilesDir = "فائل محفوظ:",
+        counterSavedInDownloads = "Downloads/FlockLedger ۾ پڻ محفوظ ٿيل",
+        counterPhotoAttachedLabel = "ڪيمرا فوٽو شامل آھي",
+    ),
 )
 
 fun englishStrings(): AppStrings = AppStrings(
@@ -512,7 +743,7 @@ fun englishStrings(): AppStrings = AppStrings(
     appSubtitle = "Sheep Farm Expenses & Accounts",
     currencyPrefix = "PKR",
     pinSetupTitle = "Set Admin & Caretaker PINs",
-    pinSetupSubtitle = "Admin has full control. Caretaker can only log expenses and livestock buy/sell entries for Admin approval.",
+    pinSetupSubtitle = "Admin has full control. Caretaker can log expenses, livestock buy/sell, and shepherd salaries for Admin approval, and send comments on Reports.",
     adminPinLabel = "Admin PIN (4+ digits)",
     caretakerPinLabel = "Caretaker PIN (different 4+ digits)",
     savePinsAction = "Save PINs & Continue",
@@ -526,7 +757,7 @@ fun englishStrings(): AppStrings = AppStrings(
     switchUserLock = "Switch User / Lock",
     changePinsMenu = "Change User PINs",
     pinsUpdatedMsg = "User PINs updated successfully",
-    caretakerRestrictedHint = "Caretaker mode: Only expenses and livestock buy/sell entries are allowed. Admin approval adds them to official totals.",
+    caretakerRestrictedHint = "Caretaker mode: Expenses, medicine, livestock buy/sell, and shepherd salaries are allowed for Admin approval.",
     menuTitle = "Menu",
     languageLabel = "Language",
     switchToEnglish = "English",
@@ -542,12 +773,14 @@ fun englishStrings(): AppStrings = AppStrings(
     backupSettingsMenu = "Auto-Backup (Sheet & Sia)",
     farmTeamMenu = "Farm Settings",
     autoBackupCounter = "Auto-Backup (%d/5)",
-    navFundflow = "Fundflow",
-    navLedger = "Ledger",
+    navFundflow = "Dashboard",
+    navBudget = "Budget",
+    navLedger = "Expenses",
     navTrade = "Trade",
-    navSalaries = "Salaries",
+    navSalaries = "Shepherds",
     navMedical = "Medical",
     navLoans = "Loans",
+    navReports = "Reports",
     pendingApprovalBadge = "Pending Approval",
     approvedBadge = "Approved",
     rejectedBadge = "Rejected",
@@ -620,7 +853,7 @@ fun englishStrings(): AppStrings = AppStrings(
     subMachinery = "Machinery",
     subOther = "Other",
     caretakerHeader = "Caretaker Entry",
-    caretakerHint = "Log farm expenses, medicine, or sheep buy/sell. Admin approval adds them to official records.",
+    caretakerHint = "Log expenses, medicine, livestock buy/sell, or shepherd salaries. View Reports and comment if any correction is needed.",
     addEntryTitle = "Add Ledger Entry",
     editEntryTitle = "Edit Ledger Entry",
     quickExpense = "Farm Expense",
@@ -730,21 +963,90 @@ fun englishStrings(): AppStrings = AppStrings(
     autoBackupTriggeredMsg = "5 entries reached! Auto-backup triggered.",
     loadingText = "Loading farm ledger...",
     retry = "Retry",
-    monthlyBudgetsTitle = "Monthly Budgets",
-    monthlyBudgetsMenu = "Monthly Budgets",
-    setBudgetCapsAction = "Set Caps",
-    feedMonthlyCapLabel = "Feed Monthly Cap (PKR)",
-    medVetMonthlyCapLabel = "Medicine & Vet Monthly Cap (PKR)",
-    alertThresholdLabel = "Alert Warning Threshold",
-    budgetNoCapSetHint = "No cap set yet — set monthly limits to receive spending alerts.",
-    budgetSpentOfCap = "%s spent of %s",
-    budgetRemainingLabel = "Left: %s",
-    budgetOverByLabel = "Over by: %s",
-    budgetApproachingBadge = "Approaching Limit",
-    budgetExceededBadge = "Limit Exceeded",
-    budgetOnTrackBadge = "On Track",
-    budgetSavedMsg = "Monthly budget caps saved",
-    budgetCapHelperText = "Leave blank or 0 to disable a category cap.",
-    budgetApproachingAlertMsg = "Alert: %s spending reached %d%% of your monthly cap!",
-    budgetExceededAlertMsg = "Alert: %s spending (%s) exceeded your monthly cap!",
+    budgets = BudgetStrings(
+        monthlyBudgetsTitle = "Monthly Budgets",
+        monthlyBudgetsMenu = "Monthly Budgets",
+        setBudgetCapsAction = "Set Caps",
+        feedMonthlyCapLabel = "Feed Monthly Cap (PKR)",
+        medVetMonthlyCapLabel = "Medicine & Vet Monthly Cap (PKR)",
+        alertThresholdLabel = "Alert Warning Threshold",
+        budgetNoCapSetHint = "No cap set yet — set monthly limits to receive spending alerts.",
+        budgetSpentOfCap = "%s spent of %s",
+        budgetRemainingLabel = "Left: %s",
+        budgetOverByLabel = "Over by: %s",
+        budgetApproachingBadge = "Approaching Limit",
+        budgetExceededBadge = "Limit Exceeded",
+        budgetOnTrackBadge = "On Track",
+        budgetSavedMsg = "Monthly budget caps saved",
+        budgetCapHelperText = "Leave blank or 0 to disable a category cap.",
+        budgetApproachingAlertMsg = "Alert: %s spending reached %d%% of your monthly cap!",
+        budgetExceededAlertMsg = "Alert: %s spending (%s) exceeded your monthly cap!",
+        budgetPageHint = "Track monthly spending caps for Feed and Medicine & Vet. Alerts trigger automatically as expenses approach your limit.",
+        budgetThisMonthExpenses = "This Month Feed & Medicine Entries",
+    ),
+    reportsGroup = ReportAndCommentStrings(
+        reportsPageTitle = "Reports & A4 Print",
+        openReportsBoldBtn = "Open Reports & A4 Print",
+        filterMonthly = "Monthly",
+        filterYearly = "Yearly",
+        filterCategories = "Categories",
+        filterCustom = "Custom",
+        previousMonthAction = "Prev",
+        nextMonthAction = "Next",
+        startDateLabel = "From Date",
+        endDateLabel = "To Date",
+        printA4Action = "Print A4",
+        runningBalanceLabel = "Cash Bal.",
+        filteredCountLabel = "%d entries",
+        reportCommentsHeading = "Report Comments & Corrections",
+        sendCommentAction = "Send Comment to Admin",
+        commentPlaceholder = "Describe the error or edit needed...",
+        selectEntryOptional = "Linked Entry (optional)",
+        generalReportComment = "General Report Note",
+        commentSubmittedMsg = "Comment sent to Admin for correction!",
+        markResolvedAction = "Mark Resolved",
+        editFlaggedEntryAction = "Edit Entry",
+        adminReplyHint = "Admin response (optional)",
+        commentResolvedMsg = "Comment marked resolved",
+        openCommentsCountLabel = "%d open",
+        noCommentsYet = "No correction comments yet.",
+        commentResolvedBadge = "Resolved",
+    ),
+    firebaseGroup = FirebaseCloudStrings(
+        firebaseSignInTitle = "Sign In to Firebase Cloud",
+        firebaseSignInSubtitle = "Sign in with your Google account to save and sync your sheep farm ledger on Firebase. All existing device records stay preserved.",
+        continueWithGoogleAction = "Continue with Google",
+        signingInLabel = "Signing in...",
+        firebaseSyncMenu = "Sync to Firebase Now",
+        firebaseSignOutAction = "Sign Out Google",
+        cloudSyncedStatus = "Saved on Firebase",
+        cloudSyncingStatus = "Syncing with Firebase...",
+        cloudSyncDoneMsg = "Firebase sync complete (%d uploaded, %d downloaded).",
+        cloudSyncErrorPrefix = "Firebase sync error:",
+        googleAccountConnected = "Google Account:",
+    ),
+    counterGroup = SheepCounterStrings(
+        navCounter = "Counter",
+        counterPageTitle = "Sheep Counter & Camera",
+        counterCountLabel = "Counted Sheep",
+        counterExpectedFlock = "Book Flock Count",
+        counterVarianceLabel = "Difference:",
+        counterMatchedLabel = "Exact Match",
+        counterResetBtn = "Reset",
+        counterCameraBtn = "Take Flock Photo",
+        counterCameraPermissionDenied = "Camera permission is required to capture a flock photo.",
+        counterTapPhotoHint = "Tap each sheep on the photo to drop numbered count markers",
+        counterUndoMarker = "Undo Marker",
+        counterClearMarkers = "Clear",
+        counterNoteHint = "Pen / location or note (optional)",
+        counterSaveToFileBtn = "Save Results in File (Date & Time)",
+        counterSavedToast = "Count saved to file with date & time!",
+        counterSaveErrorToast = "Could not save count result file",
+        counterHistoryHeading = "Saved Count Result Files",
+        counterNoHistoryYet = "No saved sheep count files yet.",
+        counterShareFileAction = "Share / Open File",
+        counterSavedInFilesDir = "Saved file:",
+        counterSavedInDownloads = "Also saved in Downloads/FlockLedger",
+        counterPhotoAttachedLabel = "Camera photo attached",
+    ),
 )

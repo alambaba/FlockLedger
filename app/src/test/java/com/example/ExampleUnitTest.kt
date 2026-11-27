@@ -8,6 +8,7 @@ import com.example.data.model.computeFarmSummary
 import com.example.data.preferences.AppPreferencesRepository
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserRole
+import com.example.data.remote.toFirestoreCreateMap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -333,6 +334,241 @@ class ExampleUnitTest {
         assertEquals(com.example.data.model.BudgetAlertLevel.EXCEEDED, status.medVetBudget.alertLevel)
         org.junit.Assert.assertTrue(status.hasAnyAlert)
     }
+
+    @Test
+    fun reportFiltering_supportsMonthlyYearlyCategoryCustomAndPendingToggle() {
+        val janCal = java.util.Calendar.getInstance().apply { set(2026, java.util.Calendar.JANUARY, 10, 12, 0, 0) }
+        val febCal = java.util.Calendar.getInstance().apply { set(2026, java.util.Calendar.FEBRUARY, 15, 12, 0, 0) }
+        val prevYearCal = java.util.Calendar.getInstance().apply { set(2025, java.util.Calendar.DECEMBER, 20, 12, 0, 0) }
+
+        val entries = listOf(
+            LedgerEntry(
+                id = "e1",
+                category = EntryCategory.EXPENSE.name,
+                subCategory = com.example.data.model.ExpenseSubCategory.FEED.name,
+                amount = 10_000.0,
+                entryDateMillis = janCal.timeInMillis,
+                title = "Jan Feed"
+            ),
+            LedgerEntry(
+                id = "e2",
+                category = EntryCategory.SHEPHERD_SALARY.name,
+                amount = 8_000.0,
+                entryDateMillis = febCal.timeInMillis,
+                approvalStatus = ApprovalStatus.PENDING.name,
+                title = "Feb Salary Pending"
+            ),
+            LedgerEntry(
+                id = "e3",
+                category = EntryCategory.LIVESTOCK_SELL.name,
+                amount = 20_000.0,
+                livestockCount = 1L,
+                entryDateMillis = prevYearCal.timeInMillis,
+                title = "Dec 2025 Sale"
+            ),
+            LedgerEntry(
+                id = "e4",
+                category = EntryCategory.EXPENSE.name,
+                amount = 5_000.0,
+                entryDateMillis = janCal.timeInMillis,
+                approvalStatus = ApprovalStatus.REJECTED.name,
+                title = "Rejected"
+            ),
+        )
+
+        val monthlyJan = com.example.data.model.filterLedgerEntriesForReport(
+            entries = entries,
+            mode = com.example.data.model.ReportFilterMode.MONTHLY,
+            year = 2026,
+            monthZeroBased = java.util.Calendar.JANUARY,
+            includePending = true,
+        )
+        assertEquals(listOf("e1"), monthlyJan.map { it.id })
+
+        val yearly2026ApprovedOnly = com.example.data.model.filterLedgerEntriesForReport(
+            entries = entries,
+            mode = com.example.data.model.ReportFilterMode.YEARLY,
+            year = 2026,
+            monthZeroBased = 0,
+            includePending = false,
+        )
+        assertEquals(listOf("e1"), yearly2026ApprovedOnly.map { it.id })
+
+        val yearly2026WithPending = com.example.data.model.filterLedgerEntriesForReport(
+            entries = entries,
+            mode = com.example.data.model.ReportFilterMode.YEARLY,
+            year = 2026,
+            monthZeroBased = 0,
+            includePending = true,
+        )
+        assertEquals(listOf("e1", "e2"), yearly2026WithPending.map { it.id })
+
+        val categoryFeed = com.example.data.model.filterLedgerEntriesForReport(
+            entries = entries,
+            mode = com.example.data.model.ReportFilterMode.CATEGORY,
+            year = 2026,
+            monthZeroBased = 0,
+            filterCategory = EntryCategory.EXPENSE,
+            filterSubCategory = com.example.data.model.ExpenseSubCategory.FEED,
+            includePending = true,
+        )
+        assertEquals(listOf("e1"), categoryFeed.map { it.id })
+
+        val customRange = com.example.data.model.filterLedgerEntriesForReport(
+            entries = entries,
+            mode = com.example.data.model.ReportFilterMode.CUSTOM,
+            year = 2026,
+            monthZeroBased = 0,
+            customStartMillis = janCal.timeInMillis,
+            customEndMillis = febCal.timeInMillis,
+            includePending = true,
+        )
+        assertEquals(listOf("e1", "e2"), customRange.map { it.id })
+    }
+
+    @Test
+    fun cashRunningBalances_tracksChronologicalApprovedCashTransactionsOnly() {
+        val entries = listOf(
+            LedgerEntry(
+                id = "a",
+                category = EntryCategory.OWNER_FUNDS.name,
+                amount = 100_000.0,
+                entryDateMillis = 1_000L,
+                title = "Capital"
+            ),
+            LedgerEntry(
+                id = "b",
+                category = EntryCategory.EXPENSE.name,
+                amount = 15_000.0,
+                entryDateMillis = 2_000L,
+                paymentMethod = com.example.data.model.PaymentMethod.CREDIT.name,
+                title = "Credit Expense"
+            ),
+            LedgerEntry(
+                id = "c",
+                category = EntryCategory.SHEPHERD_SALARY.name,
+                amount = 10_000.0,
+                entryDateMillis = 3_000L,
+                approvalStatus = ApprovalStatus.PENDING.name,
+                title = "Pending Salary"
+            ),
+            LedgerEntry(
+                id = "d",
+                category = EntryCategory.LIVESTOCK_BUY.name,
+                amount = 40_000.0,
+                livestockCount = 2L,
+                entryDateMillis = 4_000L,
+                title = "Cash Purchase"
+            ),
+        )
+
+        val balances = com.example.data.model.computeCashRunningBalances(entries)
+        assertEquals(100_000.0, balances["a"]!!, 0.01)
+        assertEquals(100_000.0, balances["b"]!!, 0.01) // Credit does not change cash
+        assertEquals(100_000.0, balances["c"]!!, 0.01) // Pending does not change cash
+        assertEquals(60_000.0, balances["d"]!!, 0.01)  // Approved cash outflow reduces cash
+    }
+
+    @Test
+    fun bottomNavigation_containsRequestedFiveDestinations() {
+        val routes = com.example.ui.screens.BOTTOM_NAV_ROUTES
+        val strings = com.example.i18n.englishStrings()
+        assertEquals(5, routes.size)
+        assertEquals(
+            listOf(
+                com.example.ui.screens.ROUTE_FUNDFLOW,
+                com.example.ui.screens.ROUTE_LEDGER,
+                com.example.ui.screens.ROUTE_TRADE,
+                com.example.ui.screens.ROUTE_SALARIES,
+                com.example.ui.screens.ROUTE_MEDICAL,
+            ),
+            routes
+        )
+        assertEquals(
+            listOf("Dashboard", "Expenses", "Trade", "Shepherds", "Medical"),
+            listOf(
+                strings.navFundflow,
+                strings.navLedger,
+                strings.navTrade,
+                strings.navSalaries,
+                strings.navMedical,
+            )
+        )
+    }
+
+    @Test
+    fun firestoreDtoMapping_preservesFieldsAndBoundsSafely() {
+        val localEntry = com.example.data.local.LedgerEntryEntity(
+            id = "e_sync_1",
+            farmId = "farm_default",
+            createdByName = "Admin",
+            category = EntryCategory.EXPENSE.name,
+            amount = 4500.0,
+            livestockCount = 0L,
+            shepherdName = "",
+            title = "Fodder",
+            note = "Dry hay",
+            receiptBase64 = null,
+            entryDateMillis = 1_700_000_000_000L,
+            createdAtMillis = 1_700_000_000_000L,
+            updatedAtMillis = 1_700_000_000_000L,
+            approvalStatus = ApprovalStatus.APPROVED.name,
+            subCategory = com.example.data.model.ExpenseSubCategory.FEED.name,
+            paymentMethod = com.example.data.model.PaymentMethod.CASH.name,
+        )
+        val createMap = localEntry.toFirestoreCreateMap()
+        assertEquals("farm_default", createMap["farmId"])
+        assertEquals("FEED", createMap["subCategory"])
+        assertEquals(4500.0, createMap["amount"] as Double, 0.01)
+
+        val remoteDto = com.example.data.remote.LedgerEntryRemoteDto(
+            id = "e_sync_1",
+            farmId = "farm_default",
+            createdByName = "Admin",
+            category = EntryCategory.EXPENSE.name,
+            subCategory = "FEED",
+            amount = 4500.0,
+            livestockCount = 0L,
+            shepherdName = "",
+            title = "Fodder",
+            note = "Dry hay",
+            receiptBase64 = null,
+            entryDateMillis = 1_700_000_000_000L,
+            createdAtMillis = 1_700_000_000_000L,
+            updatedAtMillis = 1_700_000_000_000L,
+            approvalStatus = ApprovalStatus.APPROVED.name,
+            paymentMethod = com.example.data.model.PaymentMethod.CASH.name,
+        )
+        val converted = remoteDto.toLocalEntity()
+        assertEquals("e_sync_1", converted.id)
+        assertEquals("FEED", converted.subCategory)
+        assertEquals(4500.0, converted.amount, 0.01)
+    }
+
+    @Test
+    fun sheepCountStorage_formatsTimestampAndResultFileAccurately() {
+        val ts = 1_764_200_000_000L
+        val stamp = com.example.data.counter.SheepCountStorageManager.fileStamp(ts)
+        val displayDt = com.example.data.counter.SheepCountStorageManager.displayDateTime(ts)
+        org.junit.Assert.assertTrue(stamp.matches(Regex("\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}")))
+        org.junit.Assert.assertTrue(displayDt.matches(Regex("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}")))
+
+        val report = com.example.data.counter.SheepCountStorageManager.formatResultFileText(
+            farmName = "Laar Sheep Farm",
+            countedSheep = 56,
+            expectedSheep = 54,
+            variance = 2,
+            note = "Morning North Pen",
+            photoFileName = "sheep_photo_$stamp.jpg",
+            recordedBy = "Admin",
+            formattedDateTime = displayDt,
+        )
+        org.junit.Assert.assertTrue(report.contains("Date & Time    : $displayDt"))
+        org.junit.Assert.assertTrue(report.contains("Farm Name      : Laar Sheep Farm"))
+        org.junit.Assert.assertTrue(report.contains("Counted Sheep  : 56"))
+        org.junit.Assert.assertTrue(report.contains("Book Flock     : 54"))
+        org.junit.Assert.assertTrue(report.contains("Difference     : +2"))
+        org.junit.Assert.assertTrue(report.contains("Note / Pen     : Morning North Pen"))
+        org.junit.Assert.assertTrue(report.contains("Camera Photo   : sheep_photo_$stamp.jpg"))
+    }
 }
-
-

@@ -3,5 +3,6 @@
     <files-path name="receipts" path="receipts/" />
     <files-path name="reports" path="reports/" />
     <files-path name="backups" path="backups/" />
+    <files-path name="sheep_counts" path="sheep_counts/" />
     <cache-path name="camera_cache" path="camera/" />
 </paths>

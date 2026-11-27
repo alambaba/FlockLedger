@@ -1,0 +1,205 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isValidId(id) {
+      return id is string
+        && id.size() >= 1
+        && id.size() <= 128
+        && !id.matches('.*[/\\\\].*')
+        && id != '.'
+        && id != '..';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalNullableString(data, fieldName, maxLen) {
+      return !(fieldName in data)
+        || data[fieldName] == null
+        || (data[fieldName] is string && data[fieldName].size() <= maxLen);
+    }
+
+    function isValidCreateTimestamps(data) {
+      return data.createdAt is timestamp
+        && data.createdAt <= request.time
+        && data.updatedAt is timestamp
+        && data.updatedAt <= request.time;
+    }
+
+    function isValidUpdateTimestamps(newData, oldData) {
+      return newData.createdAt == oldData.createdAt
+        && newData.updatedAt is timestamp
+        && newData.updatedAt <= request.time;
+    }
+
+    function isValidUserProfile(userId, data) {
+      return data.keys().hasAll(['userId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'displayName', 'email', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && isValidOptionalNullableString(data, 'displayName', 120)
+        && isValidOptionalNullableString(data, 'email', 200);
+    }
+
+    function isValidFarm(data) {
+      return data.keys().hasAll(['name', 'shepherds', 'initialFlockCount', 'createdAtMillis', 'updatedAtMillis', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'shepherds', 'initialFlockCount', 'createdAtMillis', 'updatedAtMillis', 'createdAt', 'updatedAt'])
+        && isValidString(data.name, 1, 80)
+        && data.shepherds is list
+        && data.shepherds.size() <= 30
+        && data.initialFlockCount is int
+        && data.initialFlockCount >= 0
+        && data.initialFlockCount <= 100000
+        && data.createdAtMillis is int
+        && data.createdAtMillis >= 0
+        && data.updatedAtMillis is int
+        && data.updatedAtMillis >= 0;
+    }
+
+    function isValidLedgerEntry(farmId, data) {
+      return data.keys().hasAll([
+          'farmId', 'createdByName', 'category', 'subCategory', 'amount',
+          'livestockCount', 'shepherdName', 'title', 'note',
+          'entryDateMillis', 'createdAtMillis', 'updatedAtMillis',
+          'approvalStatus', 'paymentMethod', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'farmId', 'createdByName', 'category', 'subCategory', 'amount',
+          'livestockCount', 'shepherdName', 'title', 'note', 'receiptBase64',
+          'entryDateMillis', 'createdAtMillis', 'updatedAtMillis',
+          'approvalStatus', 'paymentMethod', 'createdAt', 'updatedAt'
+        ])
+        && data.farmId == farmId
+        && isValidString(data.createdByName, 0, 40)
+        && isValidString(data.category, 1, 40)
+        && isValidString(data.subCategory, 0, 40)
+        && (data.amount is int || data.amount is float)
+        && data.amount >= 0
+        && data.amount <= 100000000
+        && data.livestockCount is int
+        && data.livestockCount >= 0
+        && data.livestockCount <= 100000
+        && isValidString(data.shepherdName, 0, 80)
+        && isValidString(data.title, 1, 120)
+        && isValidString(data.note, 0, 500)
+        && isValidOptionalNullableString(data, 'receiptBase64', 400000)
+        && data.entryDateMillis is int
+        && data.entryDateMillis >= 0
+        && data.createdAtMillis is int
+        && data.createdAtMillis >= 0
+        && data.updatedAtMillis is int
+        && data.updatedAtMillis >= 0
+        && data.approvalStatus in ['APPROVED', 'PENDING', 'REJECTED']
+        && data.paymentMethod in ['CASH', 'CREDIT'];
+    }
+
+    function isValidReportComment(farmId, data) {
+      return data.keys().hasAll([
+          'farmId', 'entryTitleSnapshot', 'authorRole', 'commentText',
+          'status', 'adminResponse', 'createdAtMillis', 'updatedAtMillis',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'farmId', 'entryId', 'entryTitleSnapshot', 'authorRole', 'commentText',
+          'status', 'adminResponse', 'createdAtMillis', 'updatedAtMillis',
+          'createdAt', 'updatedAt'
+        ])
+        && data.farmId == farmId
+        && isValidOptionalNullableString(data, 'entryId', 128)
+        && isValidString(data.entryTitleSnapshot, 0, 120)
+        && isValidString(data.authorRole, 1, 40)
+        && isValidString(data.commentText, 1, 600)
+        && data.status in ['OPEN', 'RESOLVED']
+        && isValidString(data.adminResponse, 0, 400)
+        && data.createdAtMillis is int
+        && data.createdAtMillis >= 0
+        && data.updatedAtMillis is int
+        && data.updatedAtMillis >= 0;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && isValidUserProfile(userId, request.resource.data)
+        && isValidCreateTimestamps(request.resource.data);
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['displayName', 'email', 'updatedAt'])
+        && isValidUserProfile(userId, request.resource.data)
+        && isValidUpdateTimestamps(request.resource.data, resource.data);
+      allow delete: if false;
+
+      match /farms/{farmId} {
+        allow get: if isOwner(userId) && isValidId(farmId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isValidId(farmId)
+          && isValidFarm(request.resource.data)
+          && isValidCreateTimestamps(request.resource.data);
+        allow update: if isOwner(userId)
+          && isValidId(farmId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name', 'shepherds', 'initialFlockCount', 'updatedAtMillis', 'updatedAt'])
+          && isValidFarm(request.resource.data)
+          && isValidUpdateTimestamps(request.resource.data, resource.data);
+        allow delete: if isOwner(userId) && isValidId(farmId);
+
+        match /entries/{entryId} {
+          allow get: if isOwner(userId) && isValidId(farmId) && isValidId(entryId);
+          allow list: if isOwner(userId) && isValidId(farmId);
+          allow create: if isOwner(userId)
+            && isValidId(farmId)
+            && isValidId(entryId)
+            && isValidLedgerEntry(farmId, request.resource.data)
+            && isValidCreateTimestamps(request.resource.data);
+          allow update: if isOwner(userId)
+            && isValidId(farmId)
+            && isValidId(entryId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'category', 'subCategory', 'amount', 'livestockCount',
+                 'shepherdName', 'title', 'note', 'receiptBase64',
+                 'entryDateMillis', 'updatedAtMillis', 'approvalStatus',
+                 'paymentMethod', 'updatedAt'
+               ])
+            && isValidLedgerEntry(farmId, request.resource.data)
+            && isValidUpdateTimestamps(request.resource.data, resource.data);
+          allow delete: if isOwner(userId) && isValidId(farmId) && isValidId(entryId);
+        }
+
+        match /comments/{commentId} {
+          allow get: if isOwner(userId) && isValidId(farmId) && isValidId(commentId);
+          allow list: if isOwner(userId) && isValidId(farmId);
+          allow create: if isOwner(userId)
+            && isValidId(farmId)
+            && isValidId(commentId)
+            && isValidReportComment(farmId, request.resource.data)
+            && isValidCreateTimestamps(request.resource.data);
+          allow update: if isOwner(userId)
+            && isValidId(farmId)
+            && isValidId(commentId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'status', 'adminResponse', 'updatedAtMillis', 'updatedAt'
+               ])
+            && isValidReportComment(farmId, request.resource.data)
+            && isValidUpdateTimestamps(request.resource.data, resource.data);
+          allow delete: if isOwner(userId) && isValidId(farmId) && isValidId(commentId);
+        }
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
