@@ -9,7 +9,6 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
-import com.example.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -43,7 +42,7 @@ class GoogleAuthManager(
 
     suspend fun attemptSilentSignIn(activityContext: Context): Boolean {
         if (auth.currentUser != null) return true
-        val serverClientId = activityContext.getString(R.string.default_web_client_id)
+        val serverClientId = resolveDefaultWebClientId(activityContext)
         if (serverClientId.isBlank()) return false
 
         val googleIdOption = GetGoogleIdOption.Builder()
@@ -83,9 +82,13 @@ class GoogleAuthManager(
     }
 
     suspend fun signInWithGoogle(activityContext: Context): Result<FirebaseUser> {
-        val serverClientId = activityContext.getString(R.string.default_web_client_id)
+        val serverClientId = resolveDefaultWebClientId(activityContext)
         if (serverClientId.isBlank()) {
-            return Result.failure(IllegalStateException("Missing Web Client ID in Google configuration"))
+            return Result.failure(
+                IllegalStateException(
+                    "Google Sign-In is not configured in app/google-services.json yet. Enable Google Sign-In + add your SHA-1 in Firebase Console and re-download google-services.json."
+                )
+            )
         }
 
         val signInOption = GetSignInWithGoogleOption.Builder(serverClientId).build()
@@ -148,6 +151,11 @@ class GoogleAuthManager(
                 Log.w(TAG, "Error during sign out", e)
             }
         }
+    }
+
+    private fun resolveDefaultWebClientId(context: Context): String {
+        val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+        return if (resId != 0) context.getString(resId) else ""
     }
 
     companion object {

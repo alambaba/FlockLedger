@@ -124,6 +124,9 @@ class FlockViewModel(
     private val _signInError = MutableStateFlow<String?>(null)
     val signInError: StateFlow<String?> = _signInError.asStateFlow()
 
+    private val _useOfflineMode = MutableStateFlow(false)
+    val useOfflineMode: StateFlow<Boolean> = _useOfflineMode.asStateFlow()
+
     private val _activeRole = MutableStateFlow<UserRole?>(null)
     val activeRole: StateFlow<UserRole?> = _activeRole.asStateFlow()
 
@@ -324,9 +327,19 @@ class FlockViewModel(
         }
     }
 
+    fun enableOfflineMode() {
+        _useOfflineMode.value = true
+    }
+
+    fun promptGoogleSignIn() {
+        _signInError.value = null
+        _useOfflineMode.value = false
+    }
+
     fun signOutGoogle() {
         viewModelScope.launch {
             _activeRole.value = null
+            _useOfflineMode.value = false
             firestoreSync.setSignedOut()
             authManager.signOut()
         }

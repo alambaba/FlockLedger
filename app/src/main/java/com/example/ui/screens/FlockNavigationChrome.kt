@@ -226,6 +226,12 @@ fun FlockDrawerSheetContent(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                         )
+                    } else {
+                        Text(
+                            text = strings.offlineCloudBadge,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                        )
                     }
                 }
             }
@@ -354,7 +360,11 @@ fun FlockDrawerSheetContent(
 
             NavigationDrawerItem(
                 icon = { Icon(Icons.Rounded.CloudSync, contentDescription = strings.firebaseSyncMenu) },
-                label = { Text(strings.firebaseSyncMenu) },
+                label = {
+                    Text(
+                        if (!signedInEmail.isNullOrBlank()) strings.firebaseSyncMenu else strings.signInCloudAction
+                    )
+                },
                 selected = false,
                 onClick = onSyncFirebaseNow,
                 modifier = Modifier.testTag("drawer_firebase_sync_button")

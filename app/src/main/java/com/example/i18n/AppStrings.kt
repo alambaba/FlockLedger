@@ -68,6 +68,10 @@ data class FirebaseCloudStrings(
     val cloudSyncDoneMsg: String,
     val cloudSyncErrorPrefix: String,
     val googleAccountConnected: String,
+    val continueOfflineAction: String,
+    val offlineModeSubtitle: String,
+    val offlineCloudBadge: String,
+    val signInCloudAction: String,
 )
 
 data class SheepCounterStrings(
@@ -400,6 +404,10 @@ data class AppStrings(
     val cloudSyncDoneMsg: String get() = firebaseGroup.cloudSyncDoneMsg
     val cloudSyncErrorPrefix: String get() = firebaseGroup.cloudSyncErrorPrefix
     val googleAccountConnected: String get() = firebaseGroup.googleAccountConnected
+    val continueOfflineAction: String get() = firebaseGroup.continueOfflineAction
+    val offlineModeSubtitle: String get() = firebaseGroup.offlineModeSubtitle
+    val offlineCloudBadge: String get() = firebaseGroup.offlineCloudBadge
+    val signInCloudAction: String get() = firebaseGroup.signInCloudAction
 
     val navCounter: String get() = counterGroup.navCounter
     val counterPageTitle: String get() = counterGroup.counterPageTitle
@@ -711,6 +719,10 @@ fun sindhiStrings(): AppStrings = AppStrings(
         cloudSyncDoneMsg = "Firebase سنڪ مڪمل: %d اپلوڊ، %d ڊائونلوڊ.",
         cloudSyncErrorPrefix = "Firebase سنڪ مسئلو:",
         googleAccountConnected = "گوگل اڪائونٽ:",
+        continueOfflineAction = "بغير سائن ان موبائيل تي هلايو",
+        offlineModeSubtitle = "توهان جو سمورو رڪارڊ فون ۾ محفوظ رهندو. جڏهن چاهيو مٿي مينيو مان گوگل سان سنڪ ڪري سگهو ٿا.",
+        offlineCloudBadge = "آف لائن موڊ (فون اسٽوريج)",
+        signInCloudAction = "Google ڪلائوڊ سائن ان",
     ),
     counterGroup = SheepCounterStrings(
         navCounter = "رڍ ڳڻپ",
@@ -1024,6 +1036,10 @@ fun englishStrings(): AppStrings = AppStrings(
         cloudSyncDoneMsg = "Firebase sync complete (%d uploaded, %d downloaded).",
         cloudSyncErrorPrefix = "Firebase sync error:",
         googleAccountConnected = "Google Account:",
+        continueOfflineAction = "Continue Offline on This Phone",
+        offlineModeSubtitle = "All farm records stay saved safely on your phone. You can connect Google Cloud Sync anytime from the menu.",
+        offlineCloudBadge = "Offline Mode (On Phone)",
+        signInCloudAction = "Sign In with Google Cloud",
     ),
     counterGroup = SheepCounterStrings(
         navCounter = "Counter",

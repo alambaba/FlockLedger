@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
@@ -33,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -66,6 +68,7 @@ fun GoogleSignInScreen(
     onToggleLanguage: () -> Unit,
     onToggleDarkMode: () -> Unit,
     onSignInClick: (Context) -> Unit,
+    onContinueOffline: () -> Unit,
 ) {
     val context = LocalContext.current
     val activityContext = context.findActivity() ?: context
@@ -215,6 +218,36 @@ fun GoogleSignInScreen(
                                 )
                             }
                         }
+
+                        OutlinedButton(
+                            onClick = onContinueOffline,
+                            enabled = !isSigningIn,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("continue_offline_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PhoneAndroid,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = strings.continueOfflineAction,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        Text(
+                            text = strings.offlineModeSubtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
                     }
                 }
             }

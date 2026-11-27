@@ -118,6 +118,7 @@ fun FlockLedgerRoot() {
     val activityContext = context.findActivity() ?: context
     val prefs by vm.preferences.collectAsStateWithLifecycle()
     val authUser by vm.authUser.collectAsStateWithLifecycle()
+    val useOfflineMode by vm.useOfflineMode.collectAsStateWithLifecycle()
     val isSigningIn by vm.isSigningIn.collectAsStateWithLifecycle()
     val signInError by vm.signInError.collectAsStateWithLifecycle()
     val activeRole by vm.activeRole.collectAsStateWithLifecycle()
@@ -133,8 +134,9 @@ fun FlockLedgerRoot() {
         isSindhiRtl = isSindhi
     ) {
         val currentUser = authUser
+        val sessionKey = currentUser?.uid ?: "offline_local"
         when {
-            currentUser == null -> {
+            currentUser == null && !useOfflineMode -> {
                 GoogleSignInScreen(
                     strings = strings,
                     darkMode = prefs.darkMode,
@@ -142,11 +144,12 @@ fun FlockLedgerRoot() {
                     errorMessage = signInError,
                     onToggleLanguage = { vm.toggleLanguage() },
                     onToggleDarkMode = { vm.toggleDarkMode() },
-                    onSignInClick = { actCtx -> vm.signInWithGoogle(actCtx) }
+                    onSignInClick = { actCtx -> vm.signInWithGoogle(actCtx) },
+                    onContinueOffline = { vm.enableOfflineMode() },
                 )
             }
             !prefs.pinsConfigured -> {
-                key(currentUser.uid) {
+                key(sessionKey) {
                     PinSetupScreen(
                         strings = strings,
                         darkMode = prefs.darkMode,
@@ -159,7 +162,7 @@ fun FlockLedgerRoot() {
                 }
             }
             activeRole == null -> {
-                key(currentUser.uid) {
+                key(sessionKey) {
                     PinUnlockScreen(
                         strings = strings,
                         darkMode = prefs.darkMode,
@@ -170,10 +173,10 @@ fun FlockLedgerRoot() {
                 }
             }
             else -> {
-                key(currentUser.uid) {
+                key(sessionKey) {
                     MainWorkspace(
                         viewModel = vm,
-                        signedInEmail = currentUser.email ?: currentUser.displayName,
+                        signedInEmail = currentUser?.email ?: currentUser?.displayName,
                         activeRole = activeRole!!,
                         strings = strings,
                         isSindhi = isSindhi,
@@ -413,7 +416,11 @@ private fun MainWorkspace(
                 },
                 onSyncFirebaseNow = {
                     scope.launch { drawerState.close() }
-                    viewModel.syncCloudNow(strings.cloudSyncDoneMsg, strings.cloudSyncErrorPrefix)
+                    if (signedInEmail.isNullOrBlank()) {
+                        viewModel.promptGoogleSignIn()
+                    } else {
+                        viewModel.syncCloudNow(strings.cloudSyncDoneMsg, strings.cloudSyncErrorPrefix)
+                    }
                 },
                 onSignOutGoogle = {
                     scope.launch { drawerState.close() }
@@ -463,7 +470,11 @@ private fun MainWorkspace(
                         actions = {
                             IconButton(
                                 onClick = {
-                                    viewModel.syncCloudNow(strings.cloudSyncDoneMsg, strings.cloudSyncErrorPrefix)
+                                    if (signedInEmail.isNullOrBlank()) {
+                                        viewModel.promptGoogleSignIn()
+                                    } else {
+                                        viewModel.syncCloudNow(strings.cloudSyncDoneMsg, strings.cloudSyncErrorPrefix)
+                                    }
                                 },
                                 modifier = Modifier.testTag("topbar_firebase_sync")
                             ) {
